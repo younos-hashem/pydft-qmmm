@@ -56,3 +56,17 @@ class LINK(CompositeCalculatorPlugin):
                     self.qm_interface = calc.interface
                 elif isinstance(calc.interface, MMInterface):
                     self.mm_interface = calc.interface
+
+        # Get original charges
+        original_charges = system.charges
+        # Prepare array of "shifted charges" to use later
+        shifted_charges = original_charges
+        for i, b_pair in enumerate(boundary_atoms):
+            q_0 = shifted_charges[b_pair[1][0]]
+            shifted_charges[b_pair[1][0]] = 0 # zero out M1 charge
+            n = len(b_pair[1]) - 1.0 # number connected to M1
+            if n > 0:
+                for j in range(n):
+                    # redistribute charges
+                    shifted_charges[b_pair[1][j+1]] += q_0/n
+
