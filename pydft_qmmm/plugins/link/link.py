@@ -11,10 +11,10 @@ from pydft_qmmm.calculators import InterfaceCalculator
 from pydft_qmmm.interfaces import QMInterface
 from pydft_qmmm.interfaces import MMInterface
 from pydft_qmmm.plugins.plugin import CompositeCalculatorPlugin
+from pydft_qmmm.common import Results
 
 if TYPE_CHECKING:
     from pydft_qmmm.calculators import CompositeCalculator
-    from pydft_qmmm.common import Results
     import mypy_extensions
     CalculateMethod = Callable[
         [
@@ -49,9 +49,6 @@ class LINK(CompositeCalculatorPlugin):
         """
         self._modifieds.append(type(calculator).__name__)
         self.system = calculator.system
-        calculator.calculate = self._modify_calculate(
-            calculator.calculate,
-        )
         # Grab the QM and MM calculators interfaces so we can do them separately
         for calc in calculator.calculators:
             if isinstance(calc, InterfaceCalculator):
@@ -61,6 +58,29 @@ class LINK(CompositeCalculatorPlugin):
                 elif isinstance(calc.interface, MMInterface):
                     self.mm_interface = calc.interface
                     self.mm_calculator = calc
+        # Force calculation sequence to do MM, then QM
+        self.calculation_sequence = dict()
+        self.calculation_sequence[f"{self.mm_calculator.name}_{0}"] = self.mm_calculator
+        self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator 
+        # Create arrays of original and shifted charges
+        # Get original charges
+        original_charges = self.system.charges
+        # Prepare array of "shifted charges" to use later
+        shifted_charges = list(original_charges)
+        for i, b_pair in enumerate(self._boundary_atoms):
+            q_0 = shifted_charges[b_pair[1][0]]
+            shifted_charges[b_pair[1][0]] = 0 # zero out M1 charge
+            n = len(b_pair[1]) - 1.0 # number connected to M1
+            for j in range(int(n)):
+                # redistribute charges
+                shifted_charges[b_pair[1][j+1]] += q_0/n
+        self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
+        print(f"ORIGINAL CHARGES: {self.charges[1]}")
+        print(f"SHIFTED CHARGES : {self.charges[0]}")
+
+        calculator.calculate = self._modify_calculate(
+            calculator.calculate,
+        )
 
     def _modify_calculate(
             self,
@@ -79,39 +99,21 @@ class LINK(CompositeCalculatorPlugin):
                 return_forces: bool | None = True,
                 return_components: bool | None = True,
         ) -> Results:
-            # Get original charges
-            original_charges = system.charges
-            # Prepare array of "shifted charges" to use later
-            shifted_charges = original_charges
-            for i, b_pair in enumerate(boundary_atoms):
-                q_0 = shifted_charges[b_pair[1][0]]
-                shifted_charges[b_pair[1][0]] = 0 # zero out M1 charge
-                n = len(b_pair[1]) - 1.0 # number connected to M1
-                if n > 0:
-                    for j in range(n):
-                    # redistribute charges
-                    shifted_charges[b_pair[1][j+1]] += q_0/n
 
-            # from the stock calculate method
+            # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
-            forces = np.zeros(system.forces.shape)
+            forces = np.zeros(self.system.forces.shape)
             components: Components = dict() # figure out what this means
-            
-            # do the MM calculation first, with the real charges
-            results = mm_calculator.calculate()
-            energy += results.energy
-            forces += results.forces
-            components[f"{mm_calculator.name}_0"] = results.energy # there is probably a more general way for this
-            components["."*1] = results.components
-
-            system.charges(shifted_charges) # shift the charges
-
-            results = qm_calculator.calculate()
-            energy += results.energy
-            forces += results.forces
-            components[f"{qm_calculator.name}_1"] = results.energy
-            components["."*2] = results.components
-
-            system.charges(original_charges) # re-shift the charges
+            for i, (name, calc) in enumerate(
+                    self.calculation_sequence.items(),
+            ):
+                results = calc.calculate()
+                energy += results.energy
+                forces += results.forces
+                components[name] = results.energy
+                components["."*(i+1)] = results.components
+                self.qm_interface.update_charges(self.charges[i])
             results = Results(energy, forces, components)
+            return results
+        return inner
 

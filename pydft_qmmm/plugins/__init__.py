@@ -15,6 +15,7 @@ from .rigid import Stationary
 from .settle import SETTLE
 from .wrap import CalculatorWrap
 from .wrap import IntegratorWrap
+from .link import LINK
 
 globals().update(get_external_plugins())
 
