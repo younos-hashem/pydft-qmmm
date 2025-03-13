@@ -36,6 +36,10 @@ class LINK(CompositeCalculatorPlugin):
             boundary_atoms = list[tuple[int,list[int]]]
     ) -> None:
         self._boundary_atoms = boundary_atoms
+        self._direct_pairs = []
+        self._pair_vectors = []
+        for pair in self._boundary_atoms:
+            self._direct_pairs.append([pair[0], pair[1][0]])
 
     def modify(
         self,
@@ -77,6 +81,12 @@ class LINK(CompositeCalculatorPlugin):
         self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
         print(f"ORIGINAL CHARGES: {self.charges[1]}")
         print(f"SHIFTED CHARGES : {self.charges[0]}")
+
+        # Get position vector from Q1 to M1 to place H atom
+        for pair in self._direct_pairs:
+            pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
+            pos = pos/np.linalg.norm(pos)
+            self._pair_vectors.append(pos)
 
         calculator.calculate = self._modify_calculate(
             calculator.calculate,
