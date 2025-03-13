@@ -117,6 +117,10 @@ class Psi4Interface(QMInterface):
         )
         return wfn
 
+    def set_fictitious(self, fictitious: list[tuple[tuple[np.float64,np.float64,np.float64],str]]) -> None:
+        # arguments [ [position], element]
+       self._context.fictitious = fictitious 
+
     def disable_embedding(self) -> None:
         """Disable electrostatic embedding.
         """

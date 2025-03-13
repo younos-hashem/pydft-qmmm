@@ -37,7 +37,6 @@ class LINK(CompositeCalculatorPlugin):
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self._direct_pairs = []
-        self._pair_vectors = []
         for pair in self._boundary_atoms:
             self._direct_pairs.append([pair[0], pair[1][0]])
 
@@ -82,11 +81,6 @@ class LINK(CompositeCalculatorPlugin):
         print(f"ORIGINAL CHARGES: {self.charges[1]}")
         print(f"SHIFTED CHARGES : {self.charges[0]}")
 
-        # Get position vector from Q1 to M1 to place H atom
-        for pair in self._direct_pairs:
-            pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
-            pos = pos/np.linalg.norm(pos)
-            self._pair_vectors.append(pos)
 
         calculator.calculate = self._modify_calculate(
             calculator.calculate,
@@ -110,6 +104,8 @@ class LINK(CompositeCalculatorPlugin):
                 return_components: bool | None = True,
         ) -> Results:
 
+            self.qm_interface.set_fictitious(fictitious)
+
             # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
@@ -127,3 +123,10 @@ class LINK(CompositeCalculatorPlugin):
             return results
         return inner
 
+    def generate_fictitious(self):
+        # Get list of H atoms to give to Psi4
+        fictitious = []
+        for pair in self._direct_pairs:
+            pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
+            pos = pos/np.linalg.norm(pos)
+            fictitious.append([pos, "H"]) # just add H atoms; could potentially add support for other kinds of link atoms

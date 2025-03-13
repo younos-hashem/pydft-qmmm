@@ -54,6 +54,7 @@ class Psi4Context:
         self.charge = charge
         self.spin = spin
         self.do_embedding = True
+        self.fictitious = [] # geometry and labels for fictitious atoms
 
     @lru_cache
     def generate_molecule(self) -> psi4.core.Molecule:
@@ -74,6 +75,17 @@ class Psi4Context:
                 + str(position[0]) + " "
                 + str(position[1]) + " "
                 + str(position[2]) + "\n"
+            )
+        if self.fictitious:
+            for atom in self.fictitious:
+                position = atom[0]
+                element  = atom[1]
+                geometrystring = (
+                    geometrystring
+                    + element + " "
+                    + str(position[0]) + " "
+                    + str(position[1]) + " "
+                    + str(position[2]) + "\n"
             )
         geometrystring += str(self.charge) + " "
         geometrystring += str(self.spin) + "\n"
