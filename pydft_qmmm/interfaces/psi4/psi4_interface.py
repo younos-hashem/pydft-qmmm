@@ -75,7 +75,7 @@ class Psi4Interface(QMInterface):
         forces = forces.to_array() * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
         forces_temp = np.zeros(self._context.positions.shape)
         qm_indices = sorted(self._context.atoms)
-        forces_temp[qm_indices, :] = forces
+        forces_temp[qm_indices, :] = forces[:len(qm_indices), :]
         if self._context.generate_external_potential():
             embed_indices = sorted(self._context.embedding)
             forces = (
@@ -83,6 +83,9 @@ class Psi4Interface(QMInterface):
                 * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
             )
             forces_temp[embed_indices, :] = forces
+        if self._context.fictitious:
+            # distribute link atom forces via chain rule (future implementation)
+            pass
         forces = forces_temp
         return forces
 

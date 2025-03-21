@@ -15,6 +15,7 @@ from pydft_qmmm.common import Results
 
 if TYPE_CHECKING:
     from pydft_qmmm.calculators import CompositeCalculator
+    from pydft_qmmm.common import Components
     import mypy_extensions
     CalculateMethod = Callable[
         [
@@ -64,8 +65,9 @@ class LINK(CompositeCalculatorPlugin):
         # Force calculation sequence to do MM, then QM
         self.calculation_sequence = dict()
         self.calculation_sequence[f"{self.mm_calculator.name}_{0}"] = self.mm_calculator
-        self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator 
-        # Create arrays of original and shifted charges
+        self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator
+
+        ## Create arrays of original and shifted charges
         # Get original charges
         original_charges = self.system.charges
         # Prepare array of "shifted charges" to use later
@@ -104,7 +106,7 @@ class LINK(CompositeCalculatorPlugin):
                 return_components: bool | None = True,
         ) -> Results:
 
-            self.qm_interface.set_fictitious(fictitious)
+            self.qm_interface.set_fictitious(self.generate_fictitious())
 
             # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
@@ -128,5 +130,6 @@ class LINK(CompositeCalculatorPlugin):
         fictitious = []
         for pair in self._direct_pairs:
             pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
-            pos = pos/np.linalg.norm(pos)
+            pos = pos/np.linalg.norm(pos) + self.system.positions[pair[0]]
             fictitious.append([pos, "H"]) # just add H atoms; could potentially add support for other kinds of link atoms
+        return fictitious
