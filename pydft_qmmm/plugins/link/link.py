@@ -38,6 +38,8 @@ class LINK(CompositeCalculatorPlugin):
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self._direct_pairs = []
+        self.distance = 1. # TEMPORARY
+        self.fictitious = []
         for pair in self._boundary_atoms:
             self._direct_pairs.append([pair[0], pair[1][0]])
 
@@ -106,7 +108,8 @@ class LINK(CompositeCalculatorPlugin):
                 return_components: bool | None = True,
         ) -> Results:
 
-            self.qm_interface.set_fictitious(self.generate_fictitious())
+            self.fictitious = self.generate_fictitious()
+            self.qm_interface.set_fictitious(self.fictitious)
 
             # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
@@ -115,21 +118,47 @@ class LINK(CompositeCalculatorPlugin):
             for i, (name, calc) in enumerate(
                     self.calculation_sequence.items(),
             ):
-                results = calc.calculate()
-                energy += results.energy
-                forces += results.forces
-                components[name] = results.energy
-                components["."*(i+1)] = results.components
+#                results = calc.calculate()
+#                energy += results.energy
+#                forces += results.forces
+                calc_energy, calc_forces, calc_components = self.get_forces(name, calc)
+                energy += calc_energy
+                forces += calc_forces
+                components[name] = calc_energy
+                components["."*(i+1)] = calc_components
                 self.qm_interface.update_charges(self.charges[i])
             results = Results(energy, forces, components)
             return results
         return inner
+    
+    def get_forces(self, name, calc):
+        results = calc.calculate()
+        energy = results.energy
+        forces = np.zeros(self.system.forces.shape)
+        if isinstance(calc.interface, QMInterface):
+            forces = results.forces[:len(self.system.positions), :]
+            forces_fictitious = results.forces[len(self.system.positions):, :]
+            forces += self.distribute_forces(self, forces_fictitious)
+        else:
+            forces = results.forces
+        return (energy, forces, results.components)
+    
+    def distribute_forces(self, fictitious_forces):
+        distributed = np.zeros(self.system.forces.shape)
+        for i, pair in enumerate(self._direct_pairs):
+            n = self.system.positions[pair[1]] - self.system.positions[pair[0]]
+            g = np.linalg.norm(self.fictitious[i,0] - self.system.positions[pair[0]]) / np.linalg.norm(n)
+            n = n/np.linalg.norm(n)
+
+            distributed[pair[1]] = -g * np.dot(fictitious_forces[i], n)*n + g*fictitious_forces[i]
+            distributed[pair[0]] = g * np.dot(fictitious_forces[i], n)*n + (1-g)*fictitious_forces[i]
+        return distributed
 
     def generate_fictitious(self):
         # Get list of H atoms to give to Psi4
         fictitious = []
         for pair in self._direct_pairs:
             pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
-            pos = pos/np.linalg.norm(pos) + self.system.positions[pair[0]]
+            pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
             fictitious.append([pos, "H"]) # just add H atoms; could potentially add support for other kinds of link atoms
         return fictitious
