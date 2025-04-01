@@ -34,11 +34,12 @@ if TYPE_CHECKING:
 class LINK(CompositeCalculatorPlugin):
     def __init__(
             self,
-            boundary_atoms = list[tuple[int,list[int]]]
+            boundary_atoms = list[tuple[int,list[int]]],
+            distance = int
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self._direct_pairs = []
-        self.distance = 1. # TEMPORARY
+        self.distance = distance # TEMPORARY
         self.fictitious = []
         for pair in self._boundary_atoms:
             self._direct_pairs.append([pair[0], pair[1][0]])
@@ -138,7 +139,7 @@ class LINK(CompositeCalculatorPlugin):
         if isinstance(calc.interface, QMInterface):
             forces = results.forces[:len(self.system.positions), :]
             forces_fictitious = results.forces[len(self.system.positions):, :]
-            forces += self.distribute_forces(self, forces_fictitious)
+            forces += self.distribute_forces(forces_fictitious)
         else:
             forces = results.forces
         return (energy, forces, results.components)
@@ -147,7 +148,7 @@ class LINK(CompositeCalculatorPlugin):
         distributed = np.zeros(self.system.forces.shape)
         for i, pair in enumerate(self._direct_pairs):
             n = self.system.positions[pair[1]] - self.system.positions[pair[0]]
-            g = np.linalg.norm(self.fictitious[i,0] - self.system.positions[pair[0]]) / np.linalg.norm(n)
+            g = np.linalg.norm(self.fictitious[i][0] - self.system.positions[pair[0]]) / np.linalg.norm(n)
             n = n/np.linalg.norm(n)
 
             distributed[pair[1]] = -g * np.dot(fictitious_forces[i], n)*n + g*fictitious_forces[i]
