@@ -83,8 +83,6 @@ class LINK(CompositeCalculatorPlugin):
                 # redistribute charges
                 shifted_charges[b_pair[1][j+1]] += q_0/n
         self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
-        print(f"ORIGINAL CHARGES: {self.charges[1]}")
-        print(f"SHIFTED CHARGES : {self.charges[0]}")
 
 
         calculator.calculate = self._modify_calculate(
@@ -102,7 +100,7 @@ class LINK(CompositeCalculatorPlugin):
 
         Returns:
             The modified calculation routine which implements
-            the link-atom method using H atoms on the boundary
+            the link-atom method using H atoms on the boundary.
         """
         def inner(
                 return_forces: bool | None = True,
@@ -115,14 +113,11 @@ class LINK(CompositeCalculatorPlugin):
             # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
-            components: Components = dict() # figure out what this means
+            components: Components = dict()
             for i, (name, calc) in enumerate(
                     self.calculation_sequence.items(),
             ):
-#                results = calc.calculate()
-#                energy += results.energy
-#                forces += results.forces
-                calc_energy, calc_forces, calc_components = self.get_forces(name, calc)
+                calc_energy, calc_forces, calc_components = self.get_forces(calc)
                 energy += calc_energy
                 forces += calc_forces
                 components[name] = calc_energy
@@ -132,7 +127,20 @@ class LINK(CompositeCalculatorPlugin):
             return results
         return inner
     
-    def get_forces(self, name, calc):
+    def get_forces(self, calc):
+        """Get energy, forces, and components from a calculator, with
+        forces redistributed if necessary.
+        
+        Args:
+            calc: The calculator to get forces from.
+        
+        Returns:
+            energy: The energy from the calculator.
+            forces: If MM, the forces from the calculator. If QM, the
+                forces from the calculator, redistributed according to
+                distribute_forces().
+            results.components: The components from the calculator.
+        """
         results = calc.calculate()
         energy = results.energy
         forces = np.zeros(self.system.forces.shape)
@@ -145,6 +153,15 @@ class LINK(CompositeCalculatorPlugin):
         return (energy, forces, results.components)
     
     def distribute_forces(self, fictitious_forces):
+        """Distribute the forces from the fictitious atoms onto the real ones.
+
+        Args:
+            fictitious_forces: The forces on each fictitious atom. Given in the
+                same order as the order of QM-MM boundary pairs.
+        
+        Returns:
+            Forces on all real atoms, redistributed according to the chain rule.
+        """
         distributed = np.zeros(self.system.forces.shape)
         for i, pair in enumerate(self._direct_pairs):
             n = self.system.positions[pair[1]] - self.system.positions[pair[0]]
@@ -156,10 +173,15 @@ class LINK(CompositeCalculatorPlugin):
         return distributed
 
     def generate_fictitious(self):
-        # Get list of H atoms to give to Psi4
+        """Generate a list of fictitious (link) atoms to give to Psi4.
+
+        Returns:
+            A list of lists containing the position vector and
+            atom type for each link atom.
+        """
         fictitious = []
         for pair in self._direct_pairs:
             pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
             pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
-            fictitious.append([pos, "H"]) # just add H atoms; could potentially add support for other kinds of link atoms
+            fictitious.append([pos, "H"])
         return fictitious
