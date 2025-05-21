@@ -35,7 +35,7 @@ class LINK(CompositeCalculatorPlugin):
     def __init__(
             self,
             boundary_atoms = list[tuple[int,list[int]]],
-            distance = int
+            distance = float
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self._direct_pairs = []
