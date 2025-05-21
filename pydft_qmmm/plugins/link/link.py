@@ -165,7 +165,7 @@ class LINK(CompositeCalculatorPlugin):
         distributed = np.zeros(self.system.forces.shape)
         for i, pair in enumerate(self._direct_pairs):
             n = self.system.positions[pair[1]] - self.system.positions[pair[0]]
-            g = np.linalg.norm(self.fictitious[i][0] - self.system.positions[pair[0]]) / np.linalg.norm(n)
+            g = self.distance / np.linalg.norm(n)
             n = n/np.linalg.norm(n)
 
             distributed[pair[1]] = -g * np.dot(fictitious_forces[i], n)*n + g*fictitious_forces[i]
