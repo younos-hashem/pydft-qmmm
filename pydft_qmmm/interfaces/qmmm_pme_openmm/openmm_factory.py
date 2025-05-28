@@ -9,6 +9,7 @@ from simtk.unit import femtosecond
 
 from .openmm_interface import PMEOpenMMInterface
 from pydft_qmmm.interfaces.openmm.openmm_factory import _adjust_forces
+from pydft_qmmm.interfaces.openmm.openmm_factory import _adjust_system
 from pydft_qmmm.interfaces.openmm.openmm_factory import _build_forcefield
 from pydft_qmmm.interfaces.openmm.openmm_factory import _build_modeller
 from pydft_qmmm.interfaces.openmm.openmm_factory import _build_system
@@ -43,6 +44,7 @@ def pme_openmm_interface_factory(settings: MMSettings) -> PMEOpenMMInterface:
     forcefield = _build_forcefield(settings, modeller)
     system = _build_system(forcefield, modeller)
     _adjust_forces(settings, system)
+    _adjust_system(settings, system)
     base_context = _build_context(
         settings, system, modeller, {
             "ReferenceVextGrid": "true",
