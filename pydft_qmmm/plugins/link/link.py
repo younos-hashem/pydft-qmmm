@@ -83,6 +83,8 @@ class LINK(CompositeCalculatorPlugin):
                 # redistribute charges
                 shifted_charges[b_pair[1][j+1]] += q_0/n
         self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
+        self.fictitious = self.generate_fictitious()
+        self.qm_interface.set_fictitious(self.fictitious)
 
 
         calculator.calculate = self._modify_calculate(

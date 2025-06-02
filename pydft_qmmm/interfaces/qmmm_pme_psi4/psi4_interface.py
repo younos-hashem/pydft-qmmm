@@ -71,9 +71,11 @@ class PMEPsi4Interface(Psi4Interface):
             **kwargs,
         )
         forces = forces.to_array() * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
-        forces_temp = np.zeros(self._context.positions.shape)
+        forces_temp = np.zeros((self._context.positions.shape[0]+len(self._context.fictitious), 3))
         qm_indices = sorted(self._context.atoms)
-        forces_temp[qm_indices, :] = forces[0:len(qm_indices)]
+        forces_temp[qm_indices, :] = forces[:len(qm_indices), :]
+        if self._context.fictitious:
+            forces_temp[len(self._context.positions):, :] = forces[len(qm_indices):, :]
         if self._context.generate_external_potential():
             embed_indices = sorted(self._context.embedding)
             forces = (

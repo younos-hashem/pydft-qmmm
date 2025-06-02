@@ -143,12 +143,12 @@ class QMMMHamiltonian(CouplingHamiltonian):
                 calculator.
         """
         calculator.cutoff = self.cutoff
-        if (
-            self.force_matrix[Subsystem.I][Subsystem.III]
-            == TheoryLevel.QM
-        ):
-            plugin = lazy_load("pydft_qmmm.plugins.pme")
-            calculator.register_plugin(plugin.PME())
+        # if (
+        #     self.force_matrix[Subsystem.I][Subsystem.III]
+        #     == TheoryLevel.QM
+        # ):
+        #     plugin = lazy_load("pydft_qmmm.plugins.pme")
+        #     calculator.register_plugin(plugin.PME())
 
     def modify_mm_interface(
             self,

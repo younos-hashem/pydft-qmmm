@@ -16,7 +16,7 @@ from .settle import SETTLE
 from .wrap import CalculatorWrap
 from .wrap import IntegratorWrap
 from .link import LINK
-
+from .pme import PME
 globals().update(get_external_plugins())
 
 del get_external_plugins
