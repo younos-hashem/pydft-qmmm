@@ -101,6 +101,7 @@ class PME(CompositeCalculatorPlugin):
                 pme_potential,
                 self.pme_gridnumber,
                 self.pme_alpha,
+                fictitious=self.qm_interface._context.fictitious
             )
             self.qm_interface.update_quad_extd_pot(
                 np.array(tuple(quadrature_pme_potential)),

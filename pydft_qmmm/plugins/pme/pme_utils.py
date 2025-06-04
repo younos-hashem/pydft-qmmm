@@ -28,6 +28,7 @@ def pme_components(
         pme_potential: NDArray[np.float64],
         pme_gridnumber: int,
         pme_alpha: float | int,
+        fictitious: list | None = [],
 ) -> tuple[Any, ...]:
     r"""Compute relevant components of the PME potential.
 
@@ -41,6 +42,8 @@ def pme_components(
             lattice edge in PME summation.
         pme_alpha: The Gaussian width parameter in Ewald summation
             (:math:`\mathrm{nm^{-1}}`).
+        fictitious: Geometry and labels for fictitious atoms. Should
+            be in the format [[[x,y,z],element_name],...] 
 
     Returns:
         The reciprocal-space correction energy, the PME potential at
@@ -54,6 +57,12 @@ def pme_components(
         system.positions.base[qm_atoms, :]
         * BOHR_PER_ANGSTROM
     )
+    if fictitious:
+        fict_pos = np.zeros((len(fictitious), 3))
+        for i in range(len(fictitious)):
+            fict_pos[i] = fictitious[i][0]
+        fict_pos = fict_pos * BOHR_PER_ANGSTROM
+        nuclei = np.concatenate((nuclei, fict_pos))
     indices = np.array(list(range(-1, pme_gridnumber+1)))
     grid = (indices,) * 3
     inverse_box = np.linalg.inv(
