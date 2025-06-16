@@ -13,6 +13,8 @@ from pydft_qmmm.interfaces import MMInterface
 from pydft_qmmm.plugins.plugin import CompositeCalculatorPlugin
 from pydft_qmmm.common import Results
 
+import xml.etree.ElementTree as ET
+
 if TYPE_CHECKING:
     from pydft_qmmm.calculators import CompositeCalculator
     from pydft_qmmm.common import Components
@@ -35,14 +37,21 @@ class LINK(CompositeCalculatorPlugin):
     def __init__(
             self,
             boundary_atoms = list[tuple[int,list[int]]],
-            distance = float
+            distance = float,
+            forcefield = list[str]
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self._direct_pairs = []
-        self.distance = distance # TEMPORARY
+        self.distance = distance
         self.fictitious = []
         for pair in self._boundary_atoms:
             self._direct_pairs.append([pair[0], pair[1][0]])
+        self.ffs = []
+        for file in forcefield:
+            tree = ET.parse(file)
+            if tree.getroot().tag == 'ForceField':
+                self.ffs.append(tree)
+        self.atoms = {}
 
     def modify(
         self,
@@ -185,3 +194,41 @@ class LINK(CompositeCalculatorPlugin):
             pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
             fictitious.append([pos, "H"])
         return fictitious
+    
+    def get_atom_information(self, index, method):
+        """Get an atom's name, residue, type, and class for use in the
+        MM force field.
+
+        Args:
+            index: The atom's index.
+            method: "MM" or "QM", the method used for the atom.
+        
+        Returns:
+            A dictionary with all the atom's information
+        """
+        name = self.system.names[index]
+        res_name = self.system.residue_names[index]
+        atom_type = ""
+        atom_class = ""
+        for tree in self.ffs:
+            root = tree.getroot()
+            residues = root.find("Residues")
+            types = root.find("AtomTypes")
+            for residue in residues:
+                for atom in residue.findall("Atom"):
+                    if atom.attrib["name"] == name:
+                        atom_type = atom.attrib["type"]
+            for type in types:
+                if type.attrib["name"] == atom_type:
+                    atom_class = type.attrib["class"]
+        if atom_type == "" or atom_class == "":
+            raise ValueError("Bad force field: atoms not found")
+        return {
+            "index": index,
+            "method": method,
+            "name": name,
+            "residue_name": res_name,
+            "type": atom_type,
+            "class": atom_class,
+        }
+
