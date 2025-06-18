@@ -34,18 +34,25 @@ if TYPE_CHECKING:
     ]
 
 class LINK(CompositeCalculatorPlugin):
+    """Modify calculation to implement the link-atom scheme.
+
+    Args:
+        boundary_atoms: A list of boundary atoms and MM nearest
+            neighbors, where each entry is of the form
+            [[Q1, M1], [M2_1, M2_2, ..., M2_n]]
+        distance: Distance along Q-M axis to place H atom
+        forcefield: A list of OpenMM force field XML files
+    """
     def __init__(
             self,
-            boundary_atoms = list[tuple[int,list[int]]],
+            boundary_atoms = list[tuple[tuple[int,int], tuple[int,...]]],
             distance = float,
             forcefield = list[str]
     ) -> None:
         self._boundary_atoms = boundary_atoms
-        self._direct_pairs = []
         self.distance = distance
         self.fictitious = []
-        for pair in self._boundary_atoms:
-            self._direct_pairs.append([pair[0], pair[1][0]])
+        self._direct_pairs = [pairs[0] for pairs in self._boundary_atoms]
         self.ffs = []
         for file in forcefield:
             tree = ET.parse(file)
@@ -81,16 +88,16 @@ class LINK(CompositeCalculatorPlugin):
 
         ## Create arrays of original and shifted charges
         # Get original charges
-        original_charges = self.system.charges
+        original_charges = self.system.charges.base
         # Prepare array of "shifted charges" to use later
-        shifted_charges = list(original_charges)
+        shifted_charges = original_charges.copy()
         for i, b_pair in enumerate(self._boundary_atoms):
-            q_0 = shifted_charges[b_pair[1][0]]
-            shifted_charges[b_pair[1][0]] = 0 # zero out M1 charge
-            n = len(b_pair[1]) - 1.0 # number connected to M1
+            q_0 = shifted_charges[b_pair[0][1]]
+            shifted_charges[b_pair[0][1]] = 0 # zero out M1 charge
+            n = len(b_pair[1])*1. # number connected to M1
             for j in range(int(n)):
                 # redistribute charges
-                shifted_charges[b_pair[1][j+1]] += q_0/n
+                shifted_charges[b_pair[1][j]] += q_0/n
         self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
 
 
