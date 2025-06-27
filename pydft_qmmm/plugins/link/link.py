@@ -109,8 +109,13 @@ class LINK(CompositeCalculatorPlugin):
             for mm_atom in pair[1]:
                 self.atoms[mm_atom] = self.get_atom_information(mm_atom, "MM")
         # add harmonic bonds and angles
+        self._openmm_context = self.mm_interface._base_context
         self.add_harmonic_bonds()
         self.add_harmonic_angles()
+        prior_state = self._openmm_context.getState(getPositions=True)
+        prior_positions = prior_state.getPositions()
+        self._openmm_context.reinitialize()
+        self._openmm_context.setPositions(prior_positions)
 
         calculator.calculate = self._modify_calculate(
             calculator.calculate,
@@ -255,7 +260,7 @@ class LINK(CompositeCalculatorPlugin):
     def add_harmonic_bonds(self):
         """Add harmonic bond interactions across the QM-MM boundary
         """
-        openmm_system = self.mm_interface._base_context.getSystem()
+        openmm_system = self._openmm_context.getSystem()
         harmonic_bond_forces = [
             force for force in openmm_system.getForces()
             if isinstance(force, openmm.HarmonicBondForce)
@@ -286,7 +291,7 @@ class LINK(CompositeCalculatorPlugin):
     def add_harmonic_angles(self):
         """Add harmonic angle interactions across the QM-MM boundary
         """
-        openmm_system = self.mm_interface._base_context.getSystem()
+        openmm_system = self._openmm_context.getSystem()
         harmonic_angle_forces = [
             force for force in openmm_system.getForces()
             if isinstance(force, openmm.HarmonicAngleForce)
