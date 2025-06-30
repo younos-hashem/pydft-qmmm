@@ -137,5 +137,8 @@ dmypy.json
 # Run data
 *.dat
 
+# Mac directory attributes
+.DS_Store
+
 # Test directory
 tests/
