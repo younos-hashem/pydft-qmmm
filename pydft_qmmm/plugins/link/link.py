@@ -50,12 +50,6 @@ class LINK(CompositeCalculatorPlugin):
         self.distance = distance
         self.fictitious = []
         self._direct_pairs = [pairs[0] for pairs in self._boundary_atoms]
-        self.ffs = []
-        for file in forcefield:
-            tree = ET.parse(file)
-            if tree.getroot().tag == 'ForceField':
-                self.ffs.append(tree)
-        self.atoms = {}
 
     def modify(
         self,
