@@ -16,6 +16,7 @@ from .settle import SETTLE
 from .wrap import CalculatorWrap
 from .wrap import IntegratorWrap
 from .link import LINK
+from .link.link_utils import auto_boundary
 
 globals().update(get_external_plugins())
 

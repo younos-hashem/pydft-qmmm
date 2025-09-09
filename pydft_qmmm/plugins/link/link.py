@@ -6,6 +6,7 @@ from typing import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
+from numpy.typing import NDArray
 
 from pydft_qmmm.calculators import InterfaceCalculator
 from pydft_qmmm.interfaces import QMInterface
@@ -43,8 +44,8 @@ class LINK(CompositeCalculatorPlugin):
     """
     def __init__(
             self,
-            boundary_atoms = list[tuple[tuple[int,int], tuple[int,...]]],
-            distance = float,
+            boundary_atoms: list[tuple[tuple[int,int], tuple[int,...]]],
+            distance: float,
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self.distance = distance
@@ -134,7 +135,7 @@ class LINK(CompositeCalculatorPlugin):
             return results
         return inner
     
-    def get_forces(self, calc):
+    def get_forces(self, calc: InterfaceCalculator) -> NDArray[np.float64]:
         """Get energy, forces, and components from a calculator, with
         forces redistributed if necessary.
         
@@ -159,7 +160,7 @@ class LINK(CompositeCalculatorPlugin):
             forces = results.forces
         return (energy, forces, results.components)
     
-    def distribute_forces(self, fictitious_forces):
+    def distribute_forces(self, fictitious_forces: NDArray[np.float64]) -> NDArray[np.float64]:
         """Distribute the forces from the fictitious atoms onto the real ones.
 
         Args:
@@ -179,7 +180,7 @@ class LINK(CompositeCalculatorPlugin):
             distributed[pair[0]] = g * np.dot(fictitious_forces[i], n)*n + (1-g)*fictitious_forces[i]
         return distributed
 
-    def generate_fictitious(self):
+    def generate_fictitious(self) -> list[tuple[tuple[np.float64,np.float64,np.float64], str]]:
         """Generate a list of fictitious (link) atoms to give to Psi4.
 
         Returns:
