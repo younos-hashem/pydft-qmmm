@@ -4,3 +4,4 @@ from __future__ import annotations
 __author__ = "Younos Hashem"
 
 from .link import LINK
+from .link_utils import auto_boundary
