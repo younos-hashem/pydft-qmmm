@@ -15,20 +15,20 @@ from pydft_qmmm.plugins import SETTLE
 @pytest.fixture
 def spce_system():
     return System.load(
-        "tests/data/spce.pdb",
+        "./data/spce.pdb",
     )
 
 
 # @pytest.fixture
 # def spce_dimer_system():
 #    return System.load(
-#        "tests/data/hoh_dimer.pdb",
+#        "./data/hoh_dimer.pdb",
 #    )
 
 
 @pytest.fixture
 def spce_qmmm_system(spce_system):
-    with open("tests/data/spce_qmmm_region_ii.json") as fh:
+    with open("./data/spce_qmmm_region_ii.json") as fh:
         embedding_list = json.load(fh)
     for atom in embedding_list:
         spce_system.subsystems[atom] = Subsystem.II
@@ -49,8 +49,8 @@ def qm_water():
 def mm_spce():
     return MMHamiltonian(
         [
-            "tests/data/spce.xml",
-            "tests/data/spce_residues.xml",
+            "./data/spce.xml",
+            "./data/spce_residues.xml",
         ],
         pme_gridnumber=30,
         pme_alpha=5.0,
@@ -61,8 +61,8 @@ def mm_spce():
 def mm_spce_no_lj():
     return MMHamiltonian(
         [
-            "tests/data/spce_no_lj.xml",
-            "tests/data/spce_residues.xml",
+            "./data/spce_no_lj.xml",
+            "./data/spce_residues.xml",
         ],
         pme_gridnumber=30,
         pme_alpha=5.0,
