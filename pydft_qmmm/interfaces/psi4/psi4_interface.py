@@ -136,6 +136,17 @@ class Psi4Interface(QMInterface):
                 + str(self.system.positions[atom][1]) + " "
                 + str(self.system.positions[atom][2]) + "\n"
             )
+        if self.fictitious:
+            for atom in self.fictitious:
+                position = atom[0]
+                designation = atom[1]
+                geometrystring = (
+                    geometrystring
+                    + designation + " "
+                    + str(position[0]) + " "
+                    + str(position[1]) + " "
+                    + str(position[2]) + "\n"
+                )
         geometrystring += str(self.charge) + " "
         geometrystring += str(self.multiplicity) + "\n"
         # geometrystring += "symmetry c1\n"
@@ -175,14 +186,6 @@ class Psi4Interface(QMInterface):
         """
         psi4.set_options(kwargs)
     
-    def set_fictitious(self, fictitious: list[tuple[tuple[np.float64,np.float64,np.float64],str]]) -> None:
-        """Set the list of fictitious atoms used by Psi4.
-        
-        Args:
-            fictitious: The positions (:math:`\mathrm{\mathring{A}}`) and
-                elements of the fictitious atoms.
-        """
-        self._context.fictitious = fictitious
 
 
 class Psi4Potential(Psi4Interface, AtomicPotential):
@@ -199,12 +202,16 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         output_interval: The interval at which Psi4 output should be
             written, e.g., the default value of 1 means that output
             will be written every calculation.
+        fictitious: Fictitious atoms, given as a list of lists, where
+            each list contains each fictitious atom's position (as
+            another list) and its Psi4 designation (e.g. element)
 
     Attributes:
         potentials: A list of electronic potentials to incorporate into
             QM calculations.
         frame: The estimated current frame for output writing purposes.
     """
+    fictitious: list = []
 
     def compute_energy(self) -> float:
         r"""Compute the energy of the system using Psi4.
@@ -228,10 +235,10 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
             ref_wfn=wfn,
         )
         forces = forces.np * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
-        forces_temp = np.zeros((self.system.positions.shape[0]+len(self._context.fictitious), 3))
+        forces_temp = np.zeros((self.system.positions.shape[0]+len(self.fictitious), 3))
         qm_indices = sorted(self.system.select("subsystem I"))
         forces_temp[qm_indices, :] = forces[:len(qm_indices), :]
-        if self._context.fictitious:
+        if self.fictitious:
             forces_temp[self.system.positions.shape[0]:, :] = forces[len(qm_indices):, :] # add fictitious forces at the end
         if self._generate_external_potential() is not None:
             embed_indices = sorted(self.system.select("subsystem II"))
@@ -251,3 +258,12 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         """
         components: dict[str, float] = {}
         return components
+    
+    def set_fictitious(self, fictitious: list) -> None:
+        """Set the list of fictitious atoms used by Psi4.
+        
+        Args:
+            fictitious: The positions (:math:`\mathrm{\mathring{A}}`) and
+                elements of the fictitious atoms.
+        """
+        self.fictitious = fictitious
