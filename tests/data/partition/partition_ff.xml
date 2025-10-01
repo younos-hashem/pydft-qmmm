@@ -1,0 +1,19 @@
+<ForceField>
+ <AtomTypes>
+  <Type name="control" class="C" element="O" mass="0.0"/>
+  <Type name="test"    class="C" element="O" mass="0.0"/>
+ </AtomTypes>
+ <Residues>
+  <Residue name="RCC">
+   <Atom name="RC1" type="control"/>
+  </Residue>
+  <Residue name="RTT">
+   <Atom name="RT1" type="test"/>
+   <Atom name="RT2" type="test"/>
+  </Residue>
+ </Residues>
+ <NonbondedForce coulomb14scale="0.833333" lj14scale="0.5">
+  <Atom type="control" charge="1.0" sigma="0.0" epsilon="0.0"/>
+  <Atom type="test"    charge="1.0" sigma="0.0" epsilon="0.0"/>
+ </NonbondedForce>
+</ForceField>

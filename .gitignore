@@ -140,6 +140,3 @@ EMBPOT
 
 # Mac directory attributes
 .DS_Store
-
-# Test directory
-tests/
