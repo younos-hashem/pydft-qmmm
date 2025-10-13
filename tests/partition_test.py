@@ -2,25 +2,28 @@ from __future__ import annotations
 
 from pydft_qmmm import System, QMHamiltonian, QMMMHamiltonian, MMHamiltonian
 from pydft_qmmm.plugins import CentroidPartition
-from pydft_qmmm.common import Subsystem
+from pydft_qmmm.utils.constants import Subsystem
 
 
 system = System.load("./data/partition/partition.pdb")
 
 qm = QMHamiltonian(
-    basis_set="def2-SVP",
+    basis="def2-SVP",
     functional="PBE",
     charge=0,
-    spin=2,
+    multiplicity=2,
+    reference="uks",
 )
 
 mm = MMHamiltonian(
-    ["./data/partition/partition_ff.xml", "./data/partition/partition_residues.xml"],
+    forcefield=["./data/partition/partition_ff.xml", "./data/partition/partition_residues.xml"],
     nonbonded_method="CutoffNonPeriodic",
     nonbonded_cutoff=14,
 )
 
-qmmm = QMMMHamiltonian("electrostatic", "cutoff", 14)
+cutoff = 14.
+
+qmmm = QMMMHamiltonian("electrostatic", "cutoff", cutoff=cutoff, partition=None)
 
 qm_indices = (0,)
 mm_indices = tuple(range(1, len(system)))
@@ -33,9 +36,8 @@ def test_centroid_partition():
     system.subsystems[list(qm_indices)] = Subsystem.I
     system.subsystems[list(mm_indices)] = Subsystem.II
 
-    centroid_partition = CentroidPartition("all")
-    centroid_partition.system = calculator.system
-    centroid_partition.cutoff = calculator.cutoff
+    centroid_partition = CentroidPartition("all", cutoff=cutoff)
+    calculator.register_plugin(centroid_partition)
     centroid_partition.generate_partition()
     
     # Manually create test case
