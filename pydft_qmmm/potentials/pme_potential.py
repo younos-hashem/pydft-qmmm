@@ -108,7 +108,7 @@ class PMEElectronicPotential(ElectronicPotential, HelPMEPyInterface):
         pme: The helPME-py PME object.
     """
 
-    def compute_potential(
+    def compute_potential_and_derivs(
             self,
             coordinates: NDArray[np.float64],
     ) -> NDArray[np.float64]:
@@ -121,17 +121,18 @@ class PMEElectronicPotential(ElectronicPotential, HelPMEPyInterface):
 
         Returns:
             An array of the PME potential
-            (:math:`\mathrm{kJ\;mol^{-1}\;e^{-1}}`),
+            (:math:`\mathrm{kJ\;mol^{-1}\;e^{-1}}`) and its gradient
+            (:math:`\mathrm{kJ\;mol^{-1}\;e^{-1}\;\mathring{A}^{-1}}`),
             corresponding to the provided coordinates.
         """
-        potential = np.zeros((len(coordinates), 1))
+        potential = np.zeros((len(coordinates), 4))
         excluded = sorted(self.system.select("not subsystem III"))
         self.pme.compute_P_rec(
             0,
             helpme_py.MatrixD(self.system.charges.reshape(-1, 1)),
             helpme_py.MatrixD(self.system.positions),
             helpme_py.MatrixD(coordinates),
-            0,
+            1,
             helpme_py.MatrixD(potential),
         )
         self.pme.compute_P_adj(

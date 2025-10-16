@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from pydft_qmmm.calculators import PotentialCalculator
-from pydft_qmmm.interfaces import QMInterface, MMInterface
+from pydft_qmmm.interfaces import QMInterface
 from pydft_qmmm.calculators.composite_calculator import CompositeCalculatorPlugin
 from pydft_qmmm.calculators.calculator import Results
 
@@ -61,20 +61,13 @@ class LINK(CompositeCalculatorPlugin):
             calculator: The calculator whose functionality will
                 modified by the plugin.
         """
+        self.calculators = [calc for calc in calculator.calculators]
         self.system = calculator.system
-        # Grab the QM and MM calculators interfaces so we can do them separately
+        # Grab the QM potential so we can access it to change fictitious atoms
         for calc in calculator.calculators:
             if isinstance(calc, PotentialCalculator):
                 if isinstance(calc.potential, QMInterface):
                     self.qm_potential = calc.potential
-                    self.qm_calculator = calc
-                elif isinstance(calc.potential, MMInterface):
-                    self.mm_potential = calc.potential
-                    self.mm_calculator = calc
-        # Force calculation sequence to do MM, then QM
-        self.calculation_sequence = dict()
-        self.calculation_sequence[f"{self.mm_calculator.name}_{0}"] = self.mm_calculator
-        self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator
 
         ## Create arrays of original and shifted charges
         # Get original charges
@@ -88,7 +81,7 @@ class LINK(CompositeCalculatorPlugin):
             for j in range(int(n)):
                 # redistribute charges
                 shifted_charges[b_pair[1][j]] += q_0/n
-        self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
+        self.charges = [original_charges, shifted_charges] # put shifted first for MM calc
 
     def _modify_calculate(
             self,
@@ -115,20 +108,29 @@ class LINK(CompositeCalculatorPlugin):
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
             components: Components = dict()
-            for i, (name, calc) in enumerate(
-                    self.calculation_sequence.items(),
-            ):
-                calc_energy, calc_forces, calc_components = self.get_forces(calc)
-                energy += calc_energy
-                forces += calc_forces
-                components[name] = calc_energy
-                components["."*(i+1)] = calc_components
-                self.system.charges = self.charges[i]
+            for i, calculator in enumerate(self.calculators):
+                if isinstance(calculator.potential, QMInterface):
+                    self.system.charges = self.charges[1] # shifted charges
+                else:
+                    self.system.charges = self.charges[0] # original charges
+                # Calculate the energy, forces, and components.
+                calc_results = self.get_results(calculator)
+                energy += calc_results.energy
+                forces += calc_results.forces
+                # Determine a unique name for the calculator.
+                name = calculator.name
+                suffix = "0"
+                while name in components:
+                    suffix = str(int(suffix) + 1)
+                    name = calculator.name + suffix
+                # Assign the components appropriately.
+                components[name] = calc_results.energy
+                components["."*(i + 1)] = calc_results.components
             results = Results(energy, forces, components)
             return results
         return inner
     
-    def get_forces(self, calc: PotentialCalculator) -> NDArray[np.float64]:
+    def get_results(self, calc: PotentialCalculator) -> Results:
         """Get energy, forces, and components from a calculator, with
         forces redistributed if necessary.
         
@@ -151,7 +153,7 @@ class LINK(CompositeCalculatorPlugin):
             forces += self.distribute_forces(forces_fictitious)
         else:
             forces = results.forces
-        return (energy, forces, results.components)
+        return Results(energy, forces, results.components)
     
     def distribute_forces(self, fictitious_forces: NDArray[np.float64]) -> NDArray[np.float64]:
         """Distribute the forces from the fictitious atoms onto the real ones.

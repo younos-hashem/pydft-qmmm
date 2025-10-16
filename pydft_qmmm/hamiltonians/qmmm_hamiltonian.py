@@ -203,7 +203,7 @@ class QMMMHamiltonian(CouplingHamiltonian):
             )
             calculator.calculators.extend(
                 [
-                    PotentialCalculator(system, pme_nuclei),
+                    #PotentialCalculator(system, pme_nuclei),
                     PotentialCalculator(system, pme_exclusion),
                 ],
             )

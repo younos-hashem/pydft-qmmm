@@ -62,7 +62,7 @@ class ElectronicPotential(ABC):
     """
 
     @abstractmethod
-    def compute_potential(
+    def compute_potential_and_derivs(
             self,
             coordinates: NDArray[np.float64],
     ) -> NDArray[np.float64]:

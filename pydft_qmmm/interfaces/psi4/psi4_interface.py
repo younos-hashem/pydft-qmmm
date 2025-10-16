@@ -17,6 +17,7 @@ from pydft_qmmm.interfaces import QMInterface
 from pydft_qmmm.potentials import AtomicPotential
 from pydft_qmmm.utils import BOHR_PER_ANGSTROM
 from pydft_qmmm.utils import KJMOL_PER_EH
+from pydft_qmmm.utils import ELEMENT_TO_MASS
 from pydft_qmmm.utils import system_cache
 
 if TYPE_CHECKING:
@@ -99,9 +100,9 @@ class Psi4Interface(QMInterface):
             xyzw = np.concatenate(tuple(blocks), axis=0)
             v = np.zeros_like(xyzw[:, 0]).reshape(-1, 1)
             for potential in self.potentials:
-                v += potential.compute_potential(
+                v += potential.compute_potential_and_derivs(
                     xyzw[:, :-1] / BOHR_PER_ANGSTROM,
-                )
+                )[:,0].reshape(-1,1)
             data = np.concatenate((xyzw, v), axis=1)
             np.savetxt("EMBPOT", data, header=f"{len(data)}", comments="")
         _, wfn = psi4.energy(
@@ -176,6 +177,21 @@ class Psi4Interface(QMInterface):
         if not external_potential:
             return None
         return np.array(external_potential)
+    
+    def get_nuclear_charges(self) -> list[int]:
+        r"""Get integer nuclear charges of real and fictitious atoms.
+
+        Returns:
+            The integer nuclear charges of the Subsystem I atoms and fictitious atoms.
+        """
+        atoms = sorted(self.system.select("subsystem I"))
+        elements = list(ELEMENT_TO_MASS.keys())
+        nuclear_charges_real = [elements.index(self.system.elements[atom])
+                                for atom in atoms]
+        nuclear_charges_fict = [elements.index(fict[1]) for fict in self.fictitious]
+        nuclear_charges = [*nuclear_charges_real, *nuclear_charges_fict]
+        
+        return nuclear_charges
 
     def update_options(self, **kwargs: psi4_utils.Psi4Options) -> None:
         """Set additional options for Psi4.
@@ -220,7 +236,15 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
             The energy (:math:`\mathrm{kJ\;mol^{-1}}`) of the system.
         """
         wfn = self._generate_wavefunction()
-        return wfn.energy() * KJMOL_PER_EH
+        energy = wfn.energy() * KJMOL_PER_EH
+        if self.fictitious:
+            for potential in self.potentials:
+                fict_pos = np.array([fict[0] for fict in self.fictitious])
+                pot = potential.compute_potential_and_derivs(fict_pos)[:,0] # just the potential
+                elements = list(ELEMENT_TO_MASS.keys())
+                charges = [elements.index(fict[1]) for fict in self.fictitious] # get fictitious atoms' integer charges
+                energy += np.dot(charges, pot * -KJMOL_PER_EH)
+        return energy
 
     def compute_forces(self) -> NDArray[np.float64]:
         r"""Compute the forces on the system using Psi4.
@@ -234,8 +258,20 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
             self.functional,
             ref_wfn=wfn,
         )
+
+        # get coordinates and charges to compute potential
+        atoms = sorted(self.system.select("subsystem I"))
+        coords = self.system.positions[atoms]
+        fict_coords = np.array([fict[0] for fict in self.fictitious])
+        coords = np.concatenate((coords, fict_coords))
+        charges = self.get_nuclear_charges()
+        # get gradient from potential and add it to force
+        for potential in self.potentials:
+            grad = potential.compute_potential_and_derivs(coords)[:, 1:]
+            pot_force = (grad.T * charges).T
+            forces.add(psi4.core.Matrix.from_array(pot_force))
         forces = forces.np * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
-        forces_temp = np.zeros((self.system.positions.shape[0]+len(self.fictitious), 3))
+        forces_temp = np.concatenate((np.zeros(self.system.positions.shape), np.zeros((len(self.fictitious), 3))))
         qm_indices = sorted(self.system.select("subsystem I"))
         forces_temp[qm_indices, :] = forces[:len(qm_indices), :]
         if self.fictitious:
@@ -264,6 +300,9 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         
         Args:
             fictitious: The positions (:math:`\mathrm{\mathring{A}}`) and
-                elements of the fictitious atoms.
+                elements of the fictitious atoms. Must be in the form
+                `fictitious = [[pos1, elem1], [pos2, elem2],...]`, where `pos` is 3-length array
+                giving the position and `elem` is a string giving the element and optional
+                additional Psi4 designator (e.g., ghost atom).
         """
         self.fictitious = fictitious
