@@ -47,6 +47,10 @@ class Psi4Interface(QMInterface):
         potentials: A list of electronic potentials to incorporate into
             QM calculations.
         frame: The estimated current frame for output writing purposes.
+        fictitious: A list of fictitious atoms present in the Psi4
+            calculation but not the system at large.
+        alt_charges: An alternative Subsystem II charge distribution in
+            which to embed the QM subsystem.
     """
     functional: str
     charge: int
@@ -61,6 +65,8 @@ class Psi4Interface(QMInterface):
         default_factory=lambda: [0],
         init=False,
     )
+    fictitious: list[dict] = field(default_factory=lambda: [])
+    alt_charges: list[np.float64] = field(default_factory=lambda: [])
 
     def add_electronic_potential(self, potential: ElectronicPotential) -> None:
         """Add an electronic potential to apply before calculations.
@@ -71,6 +77,36 @@ class Psi4Interface(QMInterface):
         """
         self.potentials.append(potential)
         self.update_options(perturb_h=True, perturb_with="EMBPOT")
+    
+    def add_fictitious_atom(self, fict: dict) -> None:
+        """Add a fictitious atom that exists only in Psi4.
+
+        Args:
+            fict: The fictitious atom to append, which should have four
+                elements:
+                position: The Cartesian coordinates of the fictitious
+                    atom
+                element: The atom's element
+                label: An optional string label
+                ghost: A boolean indicating whether to treat the atom
+                    as a Psi4 ghost atom
+        """
+        self.fictitious.append(fict)
+    
+    def update_charges(self, dist: NDArray[np.float64]) -> None:
+        """Update the alternative embedding charges.
+        
+        Args:
+            dist: The new charge distribution to use.
+        """
+        if dist.shape != self.system.charges.shape:
+            raise ValueError(
+                f"Charge array of shape {dist.shape} is incompatible "
+                f"with system with charge array of shape {self.system}.")
+        while len(dist) > len(self.alt_charges):
+            self.alt_charges.append(0.)
+        for i in range(len(self.alt_charges)):
+            self.alt_charges[i] = dist[i]
 
     @system_cache("positions", "charges", "elements", "subsystems")
     def _generate_wavefunction(self) -> psi4.core.Wavefunction:
@@ -138,9 +174,21 @@ class Psi4Interface(QMInterface):
                 + str(self.system.positions[atom][2]) + "\n"
             )
         if self.fictitious:
-            for atom in self.fictitious:
-                position = atom[0]
-                designation = atom[1]
+            ghost = [atom for atom in self.fictitious if atom["ghost"]]
+            non_ghost = [atom for atom in self.fictitious if not atom["ghost"]]
+            for atom in non_ghost: # put all ghosts at the end for organizational ease
+                position = atom["position"]
+                designation = atom["element"] + atom["label"]
+                geometrystring = (
+                    geometrystring
+                    + designation + " "
+                    + str(position[0]) + " "
+                    + str(position[1]) + " "
+                    + str(position[2]) + "\n"
+                )
+            for atom in ghost:
+                position = atom["position"]
+                designation = "@" + atom["element"] + atom["label"]
                 geometrystring = (
                     geometrystring
                     + designation + " "
@@ -165,10 +213,14 @@ class Psi4Interface(QMInterface):
         """
         external_potential = []
         embedding = sorted(self.system.select("subsystem II"))
+        if len(self.alt_charges) > 0:
+            charges = self.alt_charges
+        else:
+            charges = self.system.charges
         for i in embedding:
             external_potential.append(
                 (
-                    self.system.charges[i],
+                    charges[i],
                     self.system.positions[i, 0] * BOHR_PER_ANGSTROM,
                     self.system.positions[i, 1] * BOHR_PER_ANGSTROM,
                     self.system.positions[i, 2] * BOHR_PER_ANGSTROM,
@@ -178,20 +230,6 @@ class Psi4Interface(QMInterface):
             return None
         return np.array(external_potential)
     
-    def get_nuclear_charges(self) -> list[int]:
-        r"""Get integer nuclear charges of real and fictitious atoms.
-
-        Returns:
-            The integer nuclear charges of the Subsystem I atoms and fictitious atoms.
-        """
-        atoms = sorted(self.system.select("subsystem I"))
-        elements = list(ELEMENT_TO_MASS.keys())
-        nuclear_charges_real = [elements.index(self.system.elements[atom])
-                                for atom in atoms]
-        nuclear_charges_fict = [elements.index(fict[1]) for fict in self.fictitious]
-        nuclear_charges = [*nuclear_charges_real, *nuclear_charges_fict]
-        
-        return nuclear_charges
 
     def update_options(self, **kwargs: psi4_utils.Psi4Options) -> None:
         """Set additional options for Psi4.
@@ -227,7 +265,6 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
             QM calculations.
         frame: The estimated current frame for output writing purposes.
     """
-    fictitious: list = []
 
     def compute_energy(self) -> float:
         r"""Compute the energy of the system using Psi4.
@@ -239,10 +276,11 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         energy = wfn.energy() * KJMOL_PER_EH
         if self.fictitious:
             for potential in self.potentials:
-                fict_pos = np.array([fict[0] for fict in self.fictitious])
-                pot = potential.compute_potential_and_derivs(fict_pos)[:,0] # just the potential
+                non_ghost = [fict for fict in self.fictitious if not fict["ghost"]] # ghost atoms do not contribute
+                fict_coords = np.array([fict["position"] for fict in non_ghost])
+                pot = potential.compute_potential_and_derivs(fict_coords)[:,0] # just the potential
                 elements = list(ELEMENT_TO_MASS.keys())
-                charges = [elements.index(fict[1]) for fict in self.fictitious] # get fictitious atoms' integer charges
+                charges = [elements.index(fict["element"]) for fict in non_ghost] # get fictitious atoms' integer charges
                 energy += np.dot(charges, pot * -KJMOL_PER_EH)
         return energy
 
@@ -260,16 +298,20 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         )
 
         # get coordinates and charges to compute potential
-        atoms = sorted(self.system.select("subsystem I"))
-        coords = self.system.positions[atoms]
-        fict_coords = np.array([fict[0] for fict in self.fictitious])
-        coords = np.concatenate((coords, fict_coords))
-        charges = self.get_nuclear_charges()
+        n_real = len(sorted(self.system.select("subsystem I")))
+        non_ghost = [fict for fict in self.fictitious if not fict["ghost"]]
+        n_ghost = len(self.fictitious) - len(non_ghost)
+        fict_coords = np.array([fict["position"] for fict in non_ghost])
+        elements = list(ELEMENT_TO_MASS.keys())
+        charges = [elements.index(fict["element"]) for fict in non_ghost]
         # get gradient from potential and add it to force
         for potential in self.potentials:
-            grad = potential.compute_potential_and_derivs(coords)[:, 1:]
+            zeros_pre = np.zeros((n_real, 3),dtype=np.float64)
+            zeros_post= np.zeros((n_ghost, 3), dtype=np.float64)
+            grad = potential.compute_potential_and_derivs(fict_coords)[:, 1:]
             pot_force = (grad.T * charges).T
-            forces.add(psi4.core.Matrix.from_array(pot_force))
+            padded_force = np.concat((zeros_pre, pot_force, zeros_post)) # pad with zeros to ensure correct dimensions
+            forces.add(psi4.core.Matrix.from_array(padded_force))
         forces = forces.np * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
         forces_temp = np.concatenate((np.zeros(self.system.positions.shape), np.zeros((len(self.fictitious), 3))))
         qm_indices = sorted(self.system.select("subsystem I"))
@@ -294,15 +336,3 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         """
         components: dict[str, float] = {}
         return components
-    
-    def set_fictitious(self, fictitious: list) -> None:
-        """Set the list of fictitious atoms used by Psi4.
-        
-        Args:
-            fictitious: The positions (:math:`\mathrm{\mathring{A}}`) and
-                elements of the fictitious atoms. Must be in the form
-                `fictitious = [[pos1, elem1], [pos2, elem2],...]`, where `pos` is 3-length array
-                giving the position and `elem` is a string giving the element and optional
-                additional Psi4 designator (e.g., ghost atom).
-        """
-        self.fictitious = fictitious

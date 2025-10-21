@@ -81,7 +81,7 @@ class LINK(CompositeCalculatorPlugin):
             for j in range(int(n)):
                 # redistribute charges
                 shifted_charges[b_pair[1][j]] += q_0/n
-        self.charges = [original_charges, shifted_charges] # put shifted first for MM calc
+        self.qm_potential.update_charges(shifted_charges) # set new charges
 
     def _modify_calculate(
             self,
@@ -100,19 +100,13 @@ class LINK(CompositeCalculatorPlugin):
                 return_forces: bool | None = True,
                 return_components: bool | None = True,
         ) -> Results:
-
-            self.fictitious = self.generate_fictitious()
-            self.qm_potential.set_fictitious(self.fictitious)
+            self.generate_fictitious()
 
             # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
             components: Components = dict()
             for i, calculator in enumerate(self.calculators):
-                if isinstance(calculator.potential, QMInterface):
-                    self.system.charges = self.charges[1] # shifted charges
-                else:
-                    self.system.charges = self.charges[0] # original charges
                 # Calculate the energy, forces, and components.
                 calc_results = self.get_results(calculator)
                 energy += calc_results.energy
@@ -175,16 +169,20 @@ class LINK(CompositeCalculatorPlugin):
             distributed[pair[0]] = g * np.dot(fictitious_forces[i], n)*n + (1-g)*fictitious_forces[i]
         return distributed
 
-    def generate_fictitious(self) -> list:
+    def generate_fictitious(self) -> None:
         """Generate a list of fictitious (link) atoms to give to Psi4.
 
         Returns:
             A list of lists containing the position vector and
             atom type for each link atom.
         """
-        fictitious = []
         for pair in self._direct_pairs:
             pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
             pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
-            fictitious.append([pos, "H"])
-        return fictitious
+            atom = {
+                "position": pos,
+                "element": "H",
+                "label": "",
+                "ghost": False,
+            }
+            self.qm_potential.add_fictitious_atom(atom)

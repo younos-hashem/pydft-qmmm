@@ -135,7 +135,7 @@ class PMEElectronicPotential(ElectronicPotential, HelPMEPyInterface):
             1,
             helpme_py.MatrixD(potential),
         )
-        self.pme.compute_P_adj(
+        self.pme.compute_PDP_adj(
             0,
             helpme_py.MatrixD(self.system.charges[excluded].reshape(-1, 1)),
             helpme_py.MatrixD(self.system.positions[excluded, :]),
