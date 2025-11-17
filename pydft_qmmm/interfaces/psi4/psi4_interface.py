@@ -305,13 +305,14 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         elements = list(ELEMENT_TO_MASS.keys())
         charges = [elements.index(fict["element"]) for fict in non_ghost]
         # get gradient from potential and add it to force
-        for potential in self.potentials:
-            zeros_pre = np.zeros((n_real, 3),dtype=np.float64)
-            zeros_post= np.zeros((n_ghost, 3), dtype=np.float64)
-            grad = potential.compute_potential_and_derivs(fict_coords)[:, 1:]
-            pot_force = (grad.T * charges).T
-            padded_force = np.concat((zeros_pre, pot_force, zeros_post)) # pad with zeros to ensure correct dimensions
-            forces.add(psi4.core.Matrix.from_array(padded_force))
+        if fict_coords.size > 0:
+            for potential in self.potentials:
+                zeros_pre = np.zeros((n_real, 3),dtype=np.float64)
+                zeros_post= np.zeros((n_ghost, 3), dtype=np.float64)
+                grad = potential.compute_potential_and_derivs(fict_coords)[:, 1:]
+                pot_force = (grad.T * charges).T
+                padded_force = np.concat((zeros_pre, pot_force, zeros_post)) # pad with zeros to ensure correct dimensions
+                forces.add(psi4.core.Matrix.from_array(padded_force))
         forces = forces.np * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
         forces_temp = np.concatenate((np.zeros(self.system.positions.shape), np.zeros((len(self.fictitious), 3))))
         qm_indices = sorted(self.system.select("subsystem I"))
