@@ -79,7 +79,7 @@ class LINK(CompositeCalculatorPlugin):
             if isinstance(calc, PotentialCalculator):
                 if isinstance(calc.potential, QMInterface):
                     self.qm_potential = calc.potential
-                elif isinstance(calc.potential, QMInterface):
+                elif isinstance(calc.potential, MMInterface):
                     self.mm_potential = calc.potential
 
         ## Create arrays of original and shifted charges
@@ -103,17 +103,13 @@ class LINK(CompositeCalculatorPlugin):
             for mm_atom in pair[1]:
                 self.atoms[mm_atom] = self.get_atom_information(mm_atom)
         # add harmonic bonds and angles
-        self._openmm_context = self.mm_potential._base_context
+        self._openmm_context = self.mm_potential.base_context
         self.add_harmonic_bonds()
         self.add_harmonic_angles()
         prior_state = self._openmm_context.getState(getPositions=True)
         prior_positions = prior_state.getPositions()
         self._openmm_context.reinitialize()
         self._openmm_context.setPositions(prior_positions)
-
-        calculator.calculate = self._modify_calculate(
-            calculator.calculate,
-        )
 
     def _modify_calculate(
             self,
