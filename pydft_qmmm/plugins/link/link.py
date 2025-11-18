@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 import openmm
 
 from pydft_qmmm.calculators import PotentialCalculator
-from pydft_qmmm.interfaces import QMInterface
+from pydft_qmmm.interfaces import QMInterface, MMInterface
 from pydft_qmmm.calculators.composite_calculator import CompositeCalculatorPlugin
 from pydft_qmmm.calculators.calculator import Results
 
@@ -79,6 +79,8 @@ class LINK(CompositeCalculatorPlugin):
             if isinstance(calc, PotentialCalculator):
                 if isinstance(calc.potential, QMInterface):
                     self.qm_potential = calc.potential
+                elif isinstance(calc.potential, QMInterface):
+                    self.mm_potential = calc.potential
 
         ## Create arrays of original and shifted charges
         # Get original charges
@@ -96,12 +98,12 @@ class LINK(CompositeCalculatorPlugin):
 
         # populate atom information dictionary
         for pair in self._boundary_atoms:
-            self.atoms[pair[0][0]] = self.get_atom_information(pair[0][0], "QM")
-            self.atoms[pair[0][1]] = self.get_atom_information(pair[0][1], "MM")
+            self.atoms[pair[0][0]] = self.get_atom_information(pair[0][0])
+            self.atoms[pair[0][1]] = self.get_atom_information(pair[0][1])
             for mm_atom in pair[1]:
-                self.atoms[mm_atom] = self.get_atom_information(mm_atom, "MM")
+                self.atoms[mm_atom] = self.get_atom_information(mm_atom)
         # add harmonic bonds and angles
-        self._openmm_context = self.mm_interface._base_context
+        self._openmm_context = self.mm_potential._base_context
         self.add_harmonic_bonds()
         self.add_harmonic_angles()
         prior_state = self._openmm_context.getState(getPositions=True)
@@ -217,7 +219,7 @@ class LINK(CompositeCalculatorPlugin):
             }
             self.qm_potential.add_fictitious_atom(atom)
     
-    def get_atom_information(self, index, method):
+    def get_atom_information(self, index: int) -> dict:
         """Get an atom's name, residue, type, and class for use in the
         MM force field.
 
@@ -248,7 +250,6 @@ class LINK(CompositeCalculatorPlugin):
             raise ValueError("Bad force field: atoms not found")
         return {
             "index": index,
-            "method": method,
             "name": name,
             "element": element,
             "residue_name": res_name,
