@@ -336,4 +336,19 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
             of the system.
         """
         components: dict[str, float] = {}
+        wfn = self._generate_wavefunction()
+        psi4_base = wfn.energy() * KJMOL_PER_EH
+        external = 0.
+        print("Number of fictitious atoms:", len(self.fictitious))
+        if self.fictitious:
+            print("fictitious check passed")
+            for potential in self.potentials:
+                non_ghost = [fict for fict in self.fictitious if not fict["ghost"]] # ghost atoms do not contribute
+                fict_coords = np.array([fict["position"] for fict in non_ghost])
+                pot = potential.compute_potential_and_derivs(fict_coords)[:,0] # just the potential
+                elements = list(ELEMENT_TO_MASS.keys())
+                charges = [elements.index(fict["element"]) for fict in non_ghost] # get fictitious atoms' integer charges
+                external += np.dot(charges, pot * -KJMOL_PER_EH)
+        components["Psi4 base energy"] = psi4_base
+        components["External potential"] = external
         return components
