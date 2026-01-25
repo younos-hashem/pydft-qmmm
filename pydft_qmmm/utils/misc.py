@@ -18,7 +18,8 @@ import numpy as np
 from .constants import KB
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from types import MappingProxyType
+    from collections.abc import Callable
     from numpy.typing import NDArray
     from pydft_qmmm.calculators import Calculator
 
@@ -66,7 +67,7 @@ def generate_velocities(
 def wrap_positions(
         positions: NDArray[np.float64],
         box: NDArray[np.float64],
-        residue_map: dict[int, frozenset[int]],
+        residue_map: MappingProxyType[int, frozenset[int]],
 ) -> NDArray[np.float64]:
     r"""Wrap atom positions in accord with PBC.
 
@@ -197,21 +198,20 @@ def numerical_gradient(
             calculator.system.positions[atom, j] += dist
             if components is not None:
                 ref_1 = 0
-                comps = calculator.calculate().components
+                comps = calculator.calculate(False).components
                 for key in components:
                     ref_1 += comps[key]
             else:
-                ref_1 = calculator.calculate().energy
+                ref_1 = calculator.calculate(False).energy
             # Perform second finite difference displacement.
             calculator.system.positions[atom, j] -= 2*dist
-            ref_0 = calculator.calculate().energy
             if components is not None:
                 ref_0 = 0
-                comps = calculator.calculate().components
+                comps = calculator.calculate(False).components
                 for key in components:
                     ref_0 += comps[key]
             else:
-                ref_0 = calculator.calculate().energy
+                ref_0 = calculator.calculate(False).energy
             grad[i, j] = (ref_1 - ref_0) / (2*dist)
             calculator.system.positions[atom, j] += dist
     return grad
