@@ -55,12 +55,6 @@ class LINK(CompositeCalculatorPlugin):
         self.distance = distance
         self.fictitious = []
         self._direct_pairs = [pairs[0] for pairs in self._boundary_atoms]
-        self.ffs = []
-        for file in forcefield:
-            tree = ET.parse(file)
-            if tree.getroot().tag == 'ForceField':
-                self.ffs.append(tree)
-        self.atoms = {}
 
     def modify(
         self,
@@ -101,20 +95,6 @@ class LINK(CompositeCalculatorPlugin):
                 shifted_charges[b_pair[1][j]] += q_0/n
         self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
 
-        # populate atom information dictionary
-        for pair in self._boundary_atoms:
-            self.atoms[pair[0][0]] = self.get_atom_information(pair[0][0], "QM")
-            self.atoms[pair[0][1]] = self.get_atom_information(pair[0][1], "MM")
-            for mm_atom in pair[1]:
-                self.atoms[mm_atom] = self.get_atom_information(mm_atom, "MM")
-        # add harmonic bonds and angles
-        self._openmm_context = self.mm_interface._base_context
-        self.add_harmonic_bonds()
-        self.add_harmonic_angles()
-        prior_state = self._openmm_context.getState(getPositions=True)
-        prior_positions = prior_state.getPositions()
-        self._openmm_context.reinitialize()
-        self._openmm_context.setPositions(prior_positions)
 
         calculator.calculate = self._modify_calculate(
             calculator.calculate,
@@ -216,114 +196,3 @@ class LINK(CompositeCalculatorPlugin):
             pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
             fictitious.append([pos, "H"])
         return fictitious
-    
-    def get_atom_information(self, index, method):
-        """Get an atom's name, residue, type, and class for use in the
-        MM force field.
-
-        Args:
-            index: The atom's index.
-            method: "MM" or "QM", the method used for the atom.
-        
-        Returns:
-            A dictionary with all the atom's information
-        """
-        name = self.system.names[index]
-        res_name = self.system.residue_names[index]
-        element = self.system.elements[index]
-        atom_type = ""
-        atom_class = ""
-        for tree in self.ffs:
-            root = tree.getroot()
-            residues = root.find("Residues")
-            types = root.find("AtomTypes")
-            for residue in residues:
-                for atom in residue.findall("Atom"):
-                    if atom.attrib["name"] == name:
-                        atom_type = atom.attrib["type"]
-            for type in types:
-                if type.attrib["name"] == atom_type:
-                    atom_class = type.attrib["class"]
-        if atom_type == "" or atom_class == "":
-            raise ValueError("Bad force field: atoms not found")
-        return {
-            "index": index,
-            "method": method,
-            "name": name,
-            "element": element,
-            "residue_name": res_name,
-            "type": atom_type,
-            "class": atom_class,
-        }
-
-    def add_harmonic_bonds(self):
-        """Add harmonic bond interactions across the QM-MM boundary
-        """
-        openmm_system = self._openmm_context.getSystem()
-        harmonic_bond_forces = [
-            force for force in openmm_system.getForces()
-            if isinstance(force, openmm.HarmonicBondForce)
-        ]
-        hbondforce = harmonic_bond_forces[0] # just grab the first one
-        for pair in self._direct_pairs:
-            atom1 = self.atoms[pair[0]]
-            atom2 = self.atoms[pair[1]]
-            for tree in self.ffs:
-                root = tree.getroot()
-                bonds = root.find("HarmonicBondForce")
-                for child in bonds:
-                    add = False
-                    # bonds can be specified between classes or types
-                    if "class1" in child.attrib:
-                        if (atom1["class"] in child.attrib.values()
-                        and atom2["class"] in child.attrib.values()):
-                            add = True
-                    elif "type1" in child.attrib:
-                        if (atom1["type"] in child.attrib.values()
-                        and atom2["type"] in child.attrib.values()):
-                            add = True
-                    if add:
-                        hbondforce.addBond(atom1["index"], atom2["index"],
-                                            float(child.attrib["length"]),
-                                            float(child.attrib["k"]))
-                        
-    def add_harmonic_angles(self):
-        """Add harmonic angle interactions across the QM-MM boundary
-        """
-        openmm_system = self._openmm_context.getSystem()
-        harmonic_angle_forces = [
-            force for force in openmm_system.getForces()
-            if isinstance(force, openmm.HarmonicAngleForce)
-        ]
-        hangleforce = harmonic_angle_forces[0] # just grab the first one
-        triplets = []
-        for crossing in self._boundary_atoms:
-            for m2 in crossing[1]:
-                triplets.append([crossing[0][0], crossing[0][1], m2])
-        for triplet in triplets:
-            atom1 = self.atoms[triplet[0]]
-            atom2 = self.atoms[triplet[1]]
-            atom3 = self.atoms[triplet[2]]
-            for tree in self.ffs:
-                root = tree.getroot()
-                angles = root.find("HarmonicAngleForce")
-                for child in angles:
-                    add = False
-                    # angles can be specified with classes or types
-                    if "class1" in child.attrib:
-                        if (atom1["class"] in child.attrib.values()
-                        and atom2["class"] in child.attrib.values()
-                        and atom3["class"] in child.attrib.values()):
-                            add = True
-                    elif "type1" in child.attrib:
-                        if (atom1["type"] in child.attrib.values()
-                        and atom2["type"] in child.attrib.values()
-                        and atom3["type"] in child.attrib.values()):
-                            add = True
-                    if add:
-                        hangleforce.addAngle(atom1["index"],
-                                             atom2["index"],
-                                             atom3["index"],
-                                             float(child.attrib["angle"]),
-                                             float(child.attrib["k"]))
-
