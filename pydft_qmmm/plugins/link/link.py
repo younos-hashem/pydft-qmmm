@@ -198,11 +198,7 @@ class LINK(CompositeCalculatorPlugin):
         return distributed
 
     def generate_fictitious(self) -> None:
-        """Generate a list of fictitious (link) atoms to give to Psi4.
-
-        Returns:
-            A list of lists containing the position vector and
-            atom type for each link atom.
+        """Add all fictitious atoms to the Psi4 potential.
         """
         for pair in self._direct_pairs:
             pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
