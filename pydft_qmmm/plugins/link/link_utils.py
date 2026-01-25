@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pydft_qmmm.common.utils.selection_utils import interpret
-from pydft_qmmm.common.utils.selection_utils import decompose
-from pydft_qmmm import System
+from pydft_qmmm.system import System
+from pydft_qmmm.system.selection_utils import interpret
+from pydft_qmmm.system.selection_utils import decompose
 
 def auto_boundary(
         qm_indices: list[int],

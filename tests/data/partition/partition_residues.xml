@@ -1,0 +1,9 @@
+<Residues>
+ <Residue name="RCC">
+  <Atom name="RC1" type="control"/>
+ </Residue>
+ <Residue name="RTT">
+  <Atom name="RT1" type="test"/>
+  <Atom name="RT2" type="test"/>
+ </Residue>
+</Residues>

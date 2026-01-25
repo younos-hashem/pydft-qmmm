@@ -2,24 +2,22 @@
 """
 from __future__ import annotations
 
-from .atom_partition import AtomPartition
-from .center import CalculatorCenter
-from .center import IntegratorCenter
-from .centroid_partition import CentroidPartition
-from .firstatom_partition import FirstAtomPartition
-from .plugin import Plugin
-from .plugin_manager import get_external_plugins
-from .plumed import Plumed
-from .rigid import RigidBody
-from .rigid import Stationary
-from .settle import SETTLE
-from .wrap import CalculatorWrap
-from .wrap import IntegratorWrap
-from .link import LINK
-from .link.link_utils import auto_boundary
-
-globals().update(get_external_plugins())
-
-del get_external_plugins
-
 __author__ = "John Pederson"
+
+
+from .atom_partition import *
+from .center import *
+from .centroid_partition import *
+from .firstatom_partition import *
+from .plumed import *
+from .rigid import *
+from .settle import *
+from .wrap import *
+from .link import *
+
+from .plugin_manager import get_plugins
+from .plugin_manager import Plugin
+
+globals().update(get_plugins())
+
+del get_plugins

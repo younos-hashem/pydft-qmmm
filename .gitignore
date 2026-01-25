@@ -133,12 +133,10 @@ dmypy.json
 
 # Psi4 data
 *.clean
+EMBPOT
 
 # Run data
 *.dat
 
 # Mac directory attributes
 .DS_Store
-
-# Test directory
-tests/
