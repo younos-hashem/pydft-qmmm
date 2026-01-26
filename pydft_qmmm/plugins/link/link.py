@@ -49,7 +49,6 @@ class LINK(CompositeCalculatorPlugin):
             self,
             boundary_atoms: list[tuple[tuple[int,int], tuple[int,...]]],
             distance: float,
-            forcefield = list[str]
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self.distance = distance
@@ -66,8 +65,6 @@ class LINK(CompositeCalculatorPlugin):
             calculator: The calculator whose functionality will
                 modified by the plugin.
         """
-        self.system = calculator.system
-        # Grab the QM and MM calculators interfaces so we can do them separately
         for calc in calculator.calculators:
             if isinstance(calc, PotentialCalculator):
                 if isinstance(calc.potential, QMInterface):
@@ -80,6 +77,20 @@ class LINK(CompositeCalculatorPlugin):
         self.calculation_sequence = dict()
         self.calculation_sequence[f"{self.mm_calculator.name}_{0}"] = self.mm_calculator
         self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator
+
+        # Set system and OpenMM system/context and get QM atom set
+        self.system = calculator.system
+        self.omm_context: openmm.Context = self.mm_potential.base_context
+        self.omm_system: openmm.System = self.omm_context.getSystem()
+        self.atoms = self.system.select("subsystem I")
+
+        # Update bond exclusions
+        self.exclude_harmonic_angles()
+        self.exclude_torsion()
+        base_state = self.omm_context.getState(positions=True)
+        omm_pos = base_state.getPositions()
+        self.omm_context.reinitialize()
+        self.omm_context.setPositions(omm_pos)
 
         ## Create arrays of original and shifted charges
         # Get original charges
@@ -95,10 +106,6 @@ class LINK(CompositeCalculatorPlugin):
                 shifted_charges[b_pair[1][j]] += q_0/n
         self.charges = [shifted_charges, original_charges] # put shifted first for MM calc
 
-
-        calculator.calculate = self._modify_calculate(
-            calculator.calculate,
-        )
 
     def _modify_calculate(
             self,
@@ -196,3 +203,75 @@ class LINK(CompositeCalculatorPlugin):
             pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
             fictitious.append([pos, "H"])
         return fictitious
+    
+    def exclude_harmonic_angles(self) -> None:
+        """Remove harmonic angle interactions in which the central
+            atom is a QM atom.
+        """
+        harmonic_angle_forces = [
+            force for force in self.omm_system.getForces()
+            if isinstance(force, openmm.HarmonicAngleForce)
+        ]
+        for force in harmonic_angle_forces:
+            for i in range(force.getNumAngles()):
+                *p, a, k = force.getAngleParameters(i)
+                if p[1] in self.atoms:
+                    k *= 0
+                    force.setAngleParameters(i, *p, a, k)
+    
+    def exclude_torsion(self):
+        """Remove torsion interactions where necessary. For proper
+            torsion, interactions where atom 2 or 3 is an MM atom are
+            retained. For improper torsion, interactions in which the
+            central atom (1) is MM are retained."""
+        harmonic_bond_forces = []
+        torsion_forces = []
+        for force in self.omm_system.getForces():
+            if isinstance(force, openmm.HarmonicBondForce):
+                harmonic_bond_forces.append(force)
+            elif isinstance(force, (openmm.PeriodicTorsionForce,
+                                    openmm.RBTorsionForce,)):
+                torsion_forces.append(force)
+        
+        bonds = set()
+        for hbf in harmonic_bond_forces:
+            for i in range(hbf.getNumBonds()):
+                *p, d, k = hbf.getBondParameters(i)
+                bonds.add(tuple(sorted(p)))
+        for force in torsion_forces:
+            if isinstance(force, openmm.RBTorsionForce):
+                rb = True
+            else:
+                rb = False
+            for i in range(force.getNumTorsions()):
+                p1, p2, p3, p4, *o = force.getTorsionParameters(i)
+                if set([
+                    tuple(sorted((p1, p2))),
+                    tuple(sorted((p2, p3))),
+                    tuple(sorted((p3, p4))),
+                ]) <= bonds: # proper
+                    if set([p2, p3]) <= self.atoms:
+                        if rb:
+                            o = [0]*6
+                        else:
+                            o[-1] = 0.0
+                elif set([
+                    tuple(sorted((p3, p1))),
+                    tuple(sorted((p3, p2))),
+                    tuple(sorted((p3, p4))),
+                ]) <= bonds: # improper
+                    if p3 in self.atoms:
+                        if rb:
+                            o = [0]*6
+                        else:
+                            o[-1] = 0.0
+                else:
+                    raise ValueError(f"Could not resolve torsion type"
+                        f" (proper or improper) of torsion {i} in"
+                        f" force  {force}")
+                    # Improper torsion implementation can vary by
+                    # force field. In OpenMM, the central atom should
+                    # be first in the XML but will be third when
+                    # getting parameters. See:
+                    # https://github.com/ParmEd/ParmEd/issues/881
+                force.setTorsionParameters(i, p1, p2, p3, p4, *o)
