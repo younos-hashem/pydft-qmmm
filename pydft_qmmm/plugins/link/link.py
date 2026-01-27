@@ -75,10 +75,6 @@ class LINK(CompositeCalculatorPlugin):
                 elif isinstance(calc.potential, MMInterface):
                     self.mm_potential = calc.potential
                     self.mm_calculator = calc
-        # Force calculation sequence to do MM, then QM
-        self.calculation_sequence = dict()
-        self.calculation_sequence[f"{self.mm_calculator.name}_{0}"] = self.mm_calculator
-        self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator
 
         # Set system and OpenMM system/context and get QM atom set
         self.system = calculator.system
@@ -97,7 +93,7 @@ class LINK(CompositeCalculatorPlugin):
         ## Create arrays of original and shifted charges
         # Get original charges
         original_charges = self.system.charges.base.copy()
-        # Prepare array of "shifted charges" to use later
+        # Prepare array of "shifted charges" to use in Psi4
         shifted_charges = original_charges.copy()
         for i, b_pair in enumerate(self._boundary_atoms):
             q_0 = shifted_charges[b_pair[0][1]]
