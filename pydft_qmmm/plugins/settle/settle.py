@@ -154,13 +154,18 @@ class SETTLE(IntegratorPlugin):
                     * system.forces*(10**-4)/masses
                 )
             )
-            residues = self._get_hoh_residues(system)
-            velocities = settle_velocities(
-                residues,
-                system.positions,
-                velocities,
-                system.masses,
+            residues = self._get_hoh_residues(
+                tuple(system.residues),
+                frozenset(system.residue_map.items()),
+                system.select,
             )
+            if residues:
+                velocities = settle_velocities(
+                    residues,
+                    system.positions,
+                    velocities,
+                    system.masses,
+                )
             kinetic_energy = (
                 np.sum(0.5*masses*(velocities)**2)
                 * (10**4)

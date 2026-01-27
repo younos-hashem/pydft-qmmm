@@ -49,18 +49,11 @@ class LINK(CompositeCalculatorPlugin):
             self,
             boundary_atoms: list[tuple[tuple[int,int], tuple[int,...]]],
             distance: float,
-            forcefield = list[str]
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self.distance = distance
         self.fictitious = []
         self._direct_pairs = [pairs[0] for pairs in self._boundary_atoms]
-        self.ffs = []
-        for file in forcefield:
-            tree = ET.parse(file)
-            if tree.getroot().tag == 'ForceField':
-                self.ffs.append(tree)
-        self.atoms = {}
 
     def modify(
         self,
@@ -75,12 +68,31 @@ class LINK(CompositeCalculatorPlugin):
         self.calculators = [calc for calc in calculator.calculators]
         self.system = calculator.system
         # Grab the QM potential so we can access it to change fictitious atoms
-        for calc in calculator.calculators:
+        for calc in self.calculators:
             if isinstance(calc, PotentialCalculator):
                 if isinstance(calc.potential, QMInterface):
                     self.qm_potential = calc.potential
                 elif isinstance(calc.potential, MMInterface):
                     self.mm_potential = calc.potential
+                    self.mm_calculator = calc
+        # Force calculation sequence to do MM, then QM
+        self.calculation_sequence = dict()
+        self.calculation_sequence[f"{self.mm_calculator.name}_{0}"] = self.mm_calculator
+        self.calculation_sequence[f"{self.qm_calculator.name}_{1}"] = self.qm_calculator
+
+        # Set system and OpenMM system/context and get QM atom set
+        self.system = calculator.system
+        self.omm_context: openmm.Context = self.mm_potential.base_context
+        self.omm_system: openmm.System = self.omm_context.getSystem()
+        self.atoms = self.system.select("subsystem I")
+
+        # Update bond exclusions
+        self.exclude_harmonic_angles()
+        self.exclude_torsion()
+        base_state = self.omm_context.getState(positions=True)
+        omm_pos = base_state.getPositions()
+        self.omm_context.reinitialize()
+        self.omm_context.setPositions(omm_pos)
 
         ## Create arrays of original and shifted charges
         # Get original charges
@@ -96,20 +108,6 @@ class LINK(CompositeCalculatorPlugin):
                 shifted_charges[b_pair[1][j]] += q_0/n
         self.qm_potential.update_charges(shifted_charges) # set new charges
 
-        # populate atom information dictionary
-        for pair in self._boundary_atoms:
-            self.atoms[pair[0][0]] = self.get_atom_information(pair[0][0])
-            self.atoms[pair[0][1]] = self.get_atom_information(pair[0][1])
-            for mm_atom in pair[1]:
-                self.atoms[mm_atom] = self.get_atom_information(mm_atom)
-        # add harmonic bonds and angles
-        self._openmm_context = self.mm_potential.base_context
-        self.add_harmonic_bonds()
-        self.add_harmonic_angles()
-        prior_state = self._openmm_context.getState(getPositions=True)
-        prior_positions = prior_state.getPositions()
-        self._openmm_context.reinitialize()
-        self._openmm_context.setPositions(prior_positions)
 
     def _modify_calculate(
             self,
@@ -211,112 +209,74 @@ class LINK(CompositeCalculatorPlugin):
             }
             self.qm_potential.add_fictitious_atom(atom)
     
-    def get_atom_information(self, index: int) -> dict:
-        """Get an atom's name, residue, type, and class for use in the
-        MM force field.
-
-        Args:
-            index: The atom's index.
-            method: "MM" or "QM", the method used for the atom.
-        
-        Returns:
-            A dictionary with all the atom's information
+    def exclude_harmonic_angles(self) -> None:
+        """Remove harmonic angle interactions in which the central
+            atom is a QM atom.
         """
-        name = self.system.names[index]
-        res_name = self.system.residue_names[index]
-        element = self.system.elements[index]
-        atom_type = ""
-        atom_class = ""
-        for tree in self.ffs:
-            root = tree.getroot()
-            residues = root.find("Residues")
-            types = root.find("AtomTypes")
-            for residue in residues:
-                for atom in residue.findall("Atom"):
-                    if atom.attrib["name"] == name:
-                        atom_type = atom.attrib["type"]
-            for type in types:
-                if type.attrib["name"] == atom_type:
-                    atom_class = type.attrib["class"]
-        if atom_type == "" or atom_class == "":
-            raise ValueError("Bad force field: atoms not found")
-        return {
-            "index": index,
-            "name": name,
-            "element": element,
-            "residue_name": res_name,
-            "type": atom_type,
-            "class": atom_class,
-        }
-
-    def add_harmonic_bonds(self):
-        """Add harmonic bond interactions across the QM-MM boundary
-        """
-        openmm_system = self._openmm_context.getSystem()
-        harmonic_bond_forces = [
-            force for force in openmm_system.getForces()
-            if isinstance(force, openmm.HarmonicBondForce)
-        ]
-        hbondforce = harmonic_bond_forces[0] # just grab the first one
-        for pair in self._direct_pairs:
-            atom1 = self.atoms[pair[0]]
-            atom2 = self.atoms[pair[1]]
-            for tree in self.ffs:
-                root = tree.getroot()
-                bonds = root.find("HarmonicBondForce")
-                for child in bonds:
-                    add = False
-                    # bonds can be specified between classes or types
-                    if "class1" in child.attrib:
-                        if (atom1["class"] in child.attrib.values()
-                        and atom2["class"] in child.attrib.values()):
-                            add = True
-                    elif "type1" in child.attrib:
-                        if (atom1["type"] in child.attrib.values()
-                        and atom2["type"] in child.attrib.values()):
-                            add = True
-                    if add:
-                        hbondforce.addBond(atom1["index"], atom2["index"],
-                                            float(child.attrib["length"]),
-                                            float(child.attrib["k"]))
-                        
-    def add_harmonic_angles(self):
-        """Add harmonic angle interactions across the QM-MM boundary
-        """
-        openmm_system = self._openmm_context.getSystem()
         harmonic_angle_forces = [
-            force for force in openmm_system.getForces()
+            force for force in self.omm_system.getForces()
             if isinstance(force, openmm.HarmonicAngleForce)
         ]
-        hangleforce = harmonic_angle_forces[0] # just grab the first one
-        triplets = []
-        for crossing in self._boundary_atoms:
-            for m2 in crossing[1]:
-                triplets.append([crossing[0][0], crossing[0][1], m2])
-        for triplet in triplets:
-            atom1 = self.atoms[triplet[0]]
-            atom2 = self.atoms[triplet[1]]
-            atom3 = self.atoms[triplet[2]]
-            for tree in self.ffs:
-                root = tree.getroot()
-                angles = root.find("HarmonicAngleForce")
-                for child in angles:
-                    add = False
-                    # angles can be specified with classes or types
-                    if "class1" in child.attrib:
-                        if (atom1["class"] in child.attrib.values()
-                        and atom2["class"] in child.attrib.values()
-                        and atom3["class"] in child.attrib.values()):
-                            add = True
-                    elif "type1" in child.attrib:
-                        if (atom1["type"] in child.attrib.values()
-                        and atom2["type"] in child.attrib.values()
-                        and atom3["type"] in child.attrib.values()):
-                            add = True
-                    if add:
-                        hangleforce.addAngle(atom1["index"],
-                                             atom2["index"],
-                                             atom3["index"],
-                                             float(child.attrib["angle"]),
-                                             float(child.attrib["k"]))
-
+        for force in harmonic_angle_forces:
+            for i in range(force.getNumAngles()):
+                *p, a, k = force.getAngleParameters(i)
+                if p[1] in self.atoms:
+                    k *= 0
+                    force.setAngleParameters(i, *p, a, k)
+    
+    def exclude_torsion(self):
+        """Remove torsion interactions where necessary. For proper
+            torsion, interactions where atom 2 or 3 is an MM atom are
+            retained. For improper torsion, interactions in which the
+            central atom (1) is MM are retained."""
+        harmonic_bond_forces = []
+        torsion_forces = []
+        for force in self.omm_system.getForces():
+            if isinstance(force, openmm.HarmonicBondForce):
+                harmonic_bond_forces.append(force)
+            elif isinstance(force, (openmm.PeriodicTorsionForce,
+                                    openmm.RBTorsionForce,)):
+                torsion_forces.append(force)
+        
+        bonds = set()
+        for hbf in harmonic_bond_forces:
+            for i in range(hbf.getNumBonds()):
+                *p, d, k = hbf.getBondParameters(i)
+                bonds.add(tuple(sorted(p)))
+        for force in torsion_forces:
+            if isinstance(force, openmm.RBTorsionForce):
+                rb = True
+            else:
+                rb = False
+            for i in range(force.getNumTorsions()):
+                p1, p2, p3, p4, *o = force.getTorsionParameters(i)
+                if set([
+                    tuple(sorted((p1, p2))),
+                    tuple(sorted((p2, p3))),
+                    tuple(sorted((p3, p4))),
+                ]) <= bonds: # proper
+                    if set([p2, p3]) <= self.atoms:
+                        if rb:
+                            o = [0]*6
+                        else:
+                            o[-1] = 0.0
+                elif set([
+                    tuple(sorted((p3, p1))),
+                    tuple(sorted((p3, p2))),
+                    tuple(sorted((p3, p4))),
+                ]) <= bonds: # improper
+                    if p3 in self.atoms:
+                        if rb:
+                            o = [0]*6
+                        else:
+                            o[-1] = 0.0
+                else:
+                    raise ValueError(f"Could not resolve torsion type"
+                        f" (proper or improper) of torsion {i} in"
+                        f" force  {force}")
+                    # Improper torsion implementation can vary by
+                    # force field. In OpenMM, the central atom should
+                    # be first in the XML but will be third when
+                    # getting parameters. See:
+                    # https://github.com/ParmEd/ParmEd/issues/881
+                force.setTorsionParameters(i, p1, p2, p3, p4, *o)
