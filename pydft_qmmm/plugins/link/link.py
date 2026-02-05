@@ -19,7 +19,6 @@ import xml.etree.ElementTree as ET
 
 if TYPE_CHECKING:
     from pydft_qmmm.calculators import CompositeCalculator
-    from pydft_qmmm.common import Components
     import mypy_extensions
     CalculateMethod = Callable[
         [
@@ -127,7 +126,7 @@ class LINK(CompositeCalculatorPlugin):
             # Stripped from the stock calculate method in composite_calculator.py
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
-            components: Components = dict()
+            components = dict()
             for i, calculator in enumerate(self.calculators):
                 # Calculate the energy, forces, and components.
                 calc_results = self.get_results(calculator)
@@ -194,13 +193,13 @@ class LINK(CompositeCalculatorPlugin):
     def generate_fictitious(self) -> None:
         """Add all fictitious atoms to the Psi4 potential.
         """
-        for pair in self._direct_pairs:
+        for (i, pair) in enumerate(self._direct_pairs):
             pos = self.system.positions[pair[1]] - self.system.positions[pair[0]]
             pos = self.system.positions[pair[0]] + self.distance * pos/np.linalg.norm(pos)
             atom = {
                 "position": pos,
                 "element": "H",
-                "label": "",
+                "label": f"_LINK{i}",
                 "ghost": False,
             }
             self.qm_potential.add_fictitious_atom(atom)
