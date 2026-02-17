@@ -43,16 +43,23 @@ class LINK(CompositeCalculatorPlugin):
             [[Q1, M1], [M2_1, M2_2, ..., M2_n]]
         distance: Distance along Q-M axis to place H atom
         forcefield: A list of OpenMM force field XML files
+        charge_balance: Method to conserve total charge after removing
+            QM charges. Default is "all", which redistributes excess
+            charge equally to all MM atoms. "m1" redistributes excess
+            charge equally to M1 atoms (QM neighbors). "none" does not
+            conserve charge (very bad).
     """
     def __init__(
             self,
             boundary_atoms: list[tuple[tuple[int,int], tuple[int,...]]],
             distance: float,
+            charge_balance: str = "all",
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self.distance = distance
         self.fictitious = []
         self._direct_pairs = [pairs[0] for pairs in self._boundary_atoms]
+        self.charge_balance = charge_balance
 
     def modify(
         self,
@@ -75,11 +82,13 @@ class LINK(CompositeCalculatorPlugin):
                     self.mm_potential = calc.potential
                     self.mm_calculator = calc
 
-        # Set system and OpenMM system/context and get QM atom set
+        # Set system, OpenMM system/context, and atom sets
         self.system = calculator.system
         self.omm_context: openmm.Context = self.mm_potential.base_context
         self.omm_system: openmm.System = self.omm_context.getSystem()
         self.atoms = self.system.select("subsystem I")
+        self.mm_atoms = self.system.select("not subsystem I")
+        self.m1_atoms = set(pair[1] for pair in self._direct_pairs)
 
         # Update bond exclusions
         self.exclude_harmonic_angles()
@@ -89,18 +98,26 @@ class LINK(CompositeCalculatorPlugin):
         self.omm_context.reinitialize()
         self.omm_context.setPositions(omm_pos)
 
-        ## Create arrays of original and shifted charges
-        # Get original charges
+        # Perform charge shifting
         original_charges = self.system.charges.base.copy()
-        # Prepare array of "shifted charges" to use in Psi4
         shifted_charges = original_charges.copy()
+        if self.charge_balance.casefold() == "all":
+            region_i_charge = np.sum(self.system.charges[list(self.atoms)])
+            shifted_charges[list(self.mm_atoms)] += region_i_charge/len(self.mm_atoms)
+        elif self.charge_balance.casefold() == "m1":
+            region_i_charge = np.sum(self.system.charges[list(self.atoms)])
+            shifted_charges[list(self.m1_atoms)] += region_i_charge/len(self.m1_atoms)
+        elif not self.charge_balance.casefold() == "none":
+            raise ValueError(f"'{self.charge_balance}' is not a valid "
+                "charge balance method. Valid methods are 'all', "
+                "'m1', and 'none'.")
         for i, b_pair in enumerate(self._boundary_atoms):
             q_0 = shifted_charges[b_pair[0][1]]
             shifted_charges[b_pair[0][1]] = 0 # zero out M1 charge
-            n = len(b_pair[1])*1. # number connected to M1
-            for j in range(int(n)):
+            n = len(b_pair[1]) # number connected to M1
+            for j in range(n):
                 # redistribute charges
-                shifted_charges[b_pair[1][j]] += q_0/n
+                shifted_charges[b_pair[1][j]] += q_0/float(n)
         self.qm_potential.update_charges(shifted_charges) # set new charges
 
 
