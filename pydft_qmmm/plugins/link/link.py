@@ -87,7 +87,7 @@ class LINK(CompositeCalculatorPlugin):
         self.omm_context: openmm.Context = self.mm_potential.base_context
         self.omm_system: openmm.System = self.omm_context.getSystem()
         self.atoms = self.system.select("subsystem I")
-        self.mm_atoms = self.system.select("not subsystem I")
+        self.region_ii = self.system.select("subsystem II")
         self.m1_atoms = set(pair[1] for pair in self._direct_pairs)
 
         # Update bond exclusions
@@ -103,7 +103,7 @@ class LINK(CompositeCalculatorPlugin):
         shifted_charges = original_charges.copy()
         if self.charge_balance.casefold() == "all":
             region_i_charge = np.sum(self.system.charges[list(self.atoms)])
-            shifted_charges[list(self.mm_atoms)] += region_i_charge/len(self.mm_atoms)
+            shifted_charges[list(self.region_ii)] += region_i_charge/len(self.region_ii)
         elif self.charge_balance.casefold() == "m1":
             region_i_charge = np.sum(self.system.charges[list(self.atoms)])
             shifted_charges[list(self.m1_atoms)] += region_i_charge/len(self.m1_atoms)
