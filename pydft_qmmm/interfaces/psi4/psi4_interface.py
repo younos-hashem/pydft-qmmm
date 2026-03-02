@@ -176,7 +176,7 @@ class Psi4Interface(QMInterface):
         if self.fictitious:
             ghost = [atom for atom in self.fictitious if atom["ghost"]]
             non_ghost = [atom for atom in self.fictitious if not atom["ghost"]]
-            for atom in non_ghost: # put all ghosts at the end for organizational ease
+            for atom in non_ghost: # put all ghosts at the end
                 position = atom["position"]
                 designation = atom["element"] + atom["label"]
                 geometrystring = (
@@ -276,11 +276,15 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         energy = wfn.energy() * KJMOL_PER_EH
         if self.fictitious:
             for potential in self.potentials:
-                non_ghost = [fict for fict in self.fictitious if not fict["ghost"]] # ghost atoms do not contribute
-                fict_coords = np.array([fict["position"] for fict in non_ghost])
-                pot = potential.compute_potential_and_derivs(fict_coords)[:,0] # just the potential
+                non_ghost = [fict for fict in self.fictitious
+                             if not fict["ghost"]] # ignore ghosts
+                fict_coords = np.array([fict["position"]
+                                        for fict in non_ghost])
+                pot = potential.compute_potential_and_derivs(
+                    fict_coords)[:,0] # potential without derivs
                 elements = list(ELEMENT_TO_MASS.keys())
-                charges = [elements.index(fict["element"]) for fict in non_ghost] # get fictitious atoms' integer charges
+                charges = [elements.index(fict["element"])
+                           for fict in non_ghost] # get integer charges
                 energy += np.dot(charges, pot * -KJMOL_PER_EH)
         return energy
 
@@ -299,26 +303,36 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
 
         # get coordinates and charges to compute potential
         n_real = len(sorted(self.system.select("subsystem I")))
-        non_ghost = [fict for fict in self.fictitious if not fict["ghost"]]
+        non_ghost = [fict for fict in self.fictitious
+                     if not fict["ghost"]]
         n_ghost = len(self.fictitious) - len(non_ghost)
         fict_coords = np.array([fict["position"] for fict in non_ghost])
         elements = list(ELEMENT_TO_MASS.keys())
-        charges = [elements.index(fict["element"]) for fict in non_ghost]
+        charges = [elements.index(fict["element"])
+                   for fict in non_ghost]
         # get gradient from potential and add it to force
         if fict_coords.size > 0:
             for potential in self.potentials:
                 zeros_pre = np.zeros((n_real, 3),dtype=np.float64)
                 zeros_post= np.zeros((n_ghost, 3), dtype=np.float64)
-                grad = potential.compute_potential_and_derivs(fict_coords)[:, 1:]
+                grad = potential.compute_potential_and_derivs(
+                    fict_coords)[:, 1:]
                 pot_force = (grad.T * charges).T
-                padded_force = np.concat((zeros_pre, pot_force, zeros_post)) # pad with zeros to ensure correct dimensions
+                padded_force = np.concat((
+                    zeros_pre,
+                    pot_force,
+                    zeros_post)) # ensure correct dimensions
                 forces.add(psi4.core.Matrix.from_array(padded_force))
         forces = forces.np * -KJMOL_PER_EH * BOHR_PER_ANGSTROM
-        forces_temp = np.concatenate((np.zeros(self.system.positions.shape), np.zeros((len(self.fictitious), 3))))
+        forces_temp = np.concatenate((
+            np.zeros(self.system.positions.shape),
+            np.zeros((len(self.fictitious), 3))))
         qm_indices = sorted(self.system.select("subsystem I"))
         forces_temp[qm_indices, :] = forces[:len(qm_indices), :]
         if self.fictitious:
-            forces_temp[self.system.positions.shape[0]:, :] = forces[len(qm_indices):, :] # add fictitious forces at the end
+            forces_temp[self.system.positions.shape[0]:, :] = (
+                forces[len(qm_indices):, :] # add fictitious
+            )
         if self._generate_external_potential() is not None:
             embed_indices = sorted(self.system.select("subsystem II"))
             forces = (
@@ -342,10 +356,14 @@ class Psi4Potential(Psi4Interface, AtomicPotential):
         if self.fictitious:
             print("fictitious check passed")
             for potential in self.potentials:
-                non_ghost = [fict for fict in self.fictitious if not fict["ghost"]] # ghost atoms do not contribute
-                fict_coords = np.array([fict["position"] for fict in non_ghost])
-                pot = potential.compute_potential_and_derivs(fict_coords)[:,0] # just the potential
+                non_ghost = [fict for fict in self.fictitious
+                             if not fict["ghost"]] # ignore ghosts
+                fict_coords = np.array([fict["position"]
+                                        for fict in non_ghost])
+                pot = potential.compute_potential_and_derivs(
+                    fict_coords)[:,0] # potential without derivs
                 elements = list(ELEMENT_TO_MASS.keys())
-                charges = [elements.index(fict["element"]) for fict in non_ghost] # get fictitious atoms' integer charges
+                charges = [elements.index(fict["element"])
+                           for fict in non_ghost] # get integer charges
                 components[type(potential).__name__] = np.dot(charges, pot * -KJMOL_PER_EH)
         return components

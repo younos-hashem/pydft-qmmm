@@ -45,9 +45,9 @@ class LINK(CompositeCalculatorPlugin):
         forcefield: A list of OpenMM force field XML files
         charge_balance: Method to conserve total charge after removing
             QM charges. Default is "all", which redistributes excess
-            charge equally to all MM atoms. "m1" redistributes excess
-            charge equally to M1 atoms (QM neighbors). "none" does not
-            conserve charge (very bad).
+            charge equally to all region II atoms. "m1" redistributes
+            excdess charge equally to M1 atoms (QM neighbors). "none"
+            does not conserve charge (very bad).
     """
     def __init__(
             self,
@@ -102,11 +102,19 @@ class LINK(CompositeCalculatorPlugin):
         original_charges = self.system.charges.base.copy()
         shifted_charges = original_charges.copy()
         if self.charge_balance.casefold() == "all":
-            region_i_charge = np.sum(self.system.charges[list(self.atoms)])
-            shifted_charges[list(self.region_ii)] += region_i_charge/len(self.region_ii)
+            region_i_charge = np.sum(
+                self.system.charges[list(self.atoms)]
+            )
+            shifted_charges[list(self.region_ii)] += (
+                region_i_charge/len(self.region_ii)
+            )
         elif self.charge_balance.casefold() == "m1":
-            region_i_charge = np.sum(self.system.charges[list(self.atoms)])
-            shifted_charges[list(self.m1_atoms)] += region_i_charge/len(self.m1_atoms)
+            region_i_charge = np.sum(
+                self.system.charges[list(self.atoms)]
+            )
+            shifted_charges[list(self.m1_atoms)] += (
+                region_i_charge/len(self.m1_atoms)
+            )
         elif not self.charge_balance.casefold() == "none":
             raise ValueError(f"'{self.charge_balance}' is not a valid "
                 "charge balance method. Valid methods are 'all', "
@@ -118,7 +126,7 @@ class LINK(CompositeCalculatorPlugin):
             for j in range(n):
                 # redistribute charges
                 shifted_charges[b_pair[1][j]] += q_0/float(n)
-        self.qm_potential.update_charges(shifted_charges) # set new charges
+        self.qm_potential.update_charges(shifted_charges)
 
 
     def _modify_calculate(
@@ -140,7 +148,7 @@ class LINK(CompositeCalculatorPlugin):
         ) -> Results:
             self.generate_fictitious()
 
-            # Stripped from the stock calculate method in composite_calculator.py
+            # Based on calculate method in composite_calculator.py
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
             components = dict()
@@ -181,8 +189,8 @@ class LINK(CompositeCalculatorPlugin):
         forces = np.zeros(self.system.forces.shape)
         if isinstance(calc.potential, QMInterface):
             forces = results.forces[:len(self.system.positions), :]
-            forces_fictitious = results.forces[len(self.system.positions):, :]
-            forces += self.distribute_forces(forces_fictitious)
+            forces_fict = results.forces[len(self.system.positions):, :]
+            forces += self.distribute_forces(forces_fict)
         else:
             forces = results.forces
         return Results(energy, forces, results.components)
