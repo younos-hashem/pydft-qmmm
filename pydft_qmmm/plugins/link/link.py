@@ -12,7 +12,9 @@ import openmm
 
 from pydft_qmmm.calculators import PotentialCalculator
 from pydft_qmmm.interfaces import QMInterface, MMInterface
-from pydft_qmmm.calculators.composite_calculator import CompositeCalculatorPlugin
+from pydft_qmmm.calculators.composite_calculator import (
+    CompositeCalculatorPlugin
+)
 from pydft_qmmm.calculators.calculator import Results
 
 import xml.etree.ElementTree as ET
@@ -51,14 +53,16 @@ class LINK(CompositeCalculatorPlugin):
     """
     def __init__(
             self,
-            boundary_atoms: list[tuple[tuple[int,int], tuple[int,...]]],
+            boundary_atoms: list[tuple[tuple[int,int],
+                                       tuple[int,...]]],
             distance: float,
             charge_balance: str = "all",
     ) -> None:
         self._boundary_atoms = boundary_atoms
         self.distance = distance
         self.fictitious = []
-        self._direct_pairs = [pairs[0] for pairs in self._boundary_atoms]
+        self._direct_pairs = [pairs[0] for
+                              pairs in self._boundary_atoms]
         self.charge_balance = charge_balance
 
     def modify(
@@ -73,19 +77,18 @@ class LINK(CompositeCalculatorPlugin):
         """
         self.calculators = [calc for calc in calculator.calculators]
         self.system = calculator.system
-        # Grab the QM potential so we can access it to change fictitious atoms
+        # Get QM and MM potentials
         for calc in self.calculators:
             if isinstance(calc, PotentialCalculator):
                 if isinstance(calc.potential, QMInterface):
                     self.qm_potential = calc.potential
                 elif isinstance(calc.potential, MMInterface):
                     self.mm_potential = calc.potential
-                    self.mm_calculator = calc
 
         # Set system, OpenMM system/context, and atom sets
         self.system = calculator.system
-        self.omm_context: openmm.Context = self.mm_potential.base_context
-        self.omm_system: openmm.System = self.omm_context.getSystem()
+        self.omm_context = self.mm_potential.base_context
+        self.omm_system = self.omm_context.getSystem()
         self.atoms = self.system.select("subsystem I")
         self.region_ii = self.system.select("subsystem II")
         self.m1_atoms = set(pair[1] for pair in self._direct_pairs)
@@ -101,7 +104,8 @@ class LINK(CompositeCalculatorPlugin):
         # Perform charge shifting
         original_charges = self.system.charges.base.copy()
         shifted_charges = original_charges.copy()
-        if self.charge_balance.casefold() == "all":
+        if (self.charge_balance.casefold() == "all"
+            and len(self.self.region_ii) > 0):
             region_i_charge = np.sum(
                 self.system.charges[list(self.atoms)]
             )
@@ -189,7 +193,9 @@ class LINK(CompositeCalculatorPlugin):
         forces = np.zeros(self.system.forces.shape)
         if isinstance(calc.potential, QMInterface):
             forces = results.forces[:len(self.system.positions), :]
-            forces_fict = results.forces[len(self.system.positions):, :]
+            forces_fict = results.forces[
+                len(self.system.positions):, :
+            ]
             forces += self.distribute_forces(forces_fict)
         else:
             forces = results.forces
