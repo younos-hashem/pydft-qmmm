@@ -104,14 +104,14 @@ class LINK(CompositeCalculatorPlugin):
         # Perform charge shifting
         original_charges = self.system.charges.base.copy()
         shifted_charges = original_charges.copy()
-        if (self.charge_balance.casefold() == "all"
-            and len(self.region_ii) > 0):
-            region_i_charge = np.sum(
-                self.system.charges[list(self.atoms)]
-            )
-            shifted_charges[list(self.region_ii)] += (
-                region_i_charge/len(self.region_ii)
-            )
+        if self.charge_balance.casefold() == "all":
+            if len(self.region_ii) > 0:
+                region_i_charge = np.sum(
+                    self.system.charges[list(self.atoms)]
+                )
+                shifted_charges[list(self.region_ii)] += (
+                    region_i_charge/len(self.region_ii)
+                )
         elif self.charge_balance.casefold() == "m1":
             region_i_charge = np.sum(
                 self.system.charges[list(self.atoms)]
