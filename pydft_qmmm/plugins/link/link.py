@@ -105,7 +105,7 @@ class LINK(CompositeCalculatorPlugin):
         original_charges = self.system.charges.base.copy()
         shifted_charges = original_charges.copy()
         if (self.charge_balance.casefold() == "all"
-            and len(self.self.region_ii) > 0):
+            and len(self.region_ii) > 0):
             region_i_charge = np.sum(
                 self.system.charges[list(self.atoms)]
             )
