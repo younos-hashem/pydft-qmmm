@@ -82,7 +82,7 @@ class Psi4Interface(QMInterface):
         """Add a fictitious atom that exists only in Psi4.
 
         Args:
-            fict: The fictitious atom to append, which should have four
+            fict: The fictitious atom to append, a dictionary with four
                 elements:
                 position: The Cartesian coordinates of the fictitious
                     atom
@@ -200,6 +200,7 @@ class Psi4Interface(QMInterface):
         geometrystring += str(self.multiplicity) + "\n"
         # geometrystring += "symmetry c1\n"
         geometrystring += "noreorient\nnocom\n"
+        print(geometrystring)
         return psi4.geometry(geometrystring)
 
     @system_cache("positions", "charges", "subsystems")

@@ -101,36 +101,8 @@ class LINK(CompositeCalculatorPlugin):
         self.omm_context.reinitialize()
         self.omm_context.setPositions(omm_pos)
 
-        # Perform charge shifting
-        original_charges = self.system.charges.base.copy()
-        shifted_charges = original_charges.copy()
-        if self.charge_balance.casefold() == "all":
-            if len(self.region_ii) > 0:
-                region_i_charge = np.sum(
-                    self.system.charges[list(self.atoms)]
-                )
-                shifted_charges[list(self.region_ii)] += (
-                    region_i_charge/len(self.region_ii)
-                )
-        elif self.charge_balance.casefold() == "m1":
-            region_i_charge = np.sum(
-                self.system.charges[list(self.atoms)]
-            )
-            shifted_charges[list(self.m1_atoms)] += (
-                region_i_charge/len(self.m1_atoms)
-            )
-        elif not self.charge_balance.casefold() == "none":
-            raise ValueError(f"'{self.charge_balance}' is not a valid "
-                "charge balance method. Valid methods are 'all', "
-                "'m1', and 'none'.")
-        for i, b_pair in enumerate(self._boundary_atoms):
-            q_0 = shifted_charges[b_pair[0][1]]
-            shifted_charges[b_pair[0][1]] = 0 # zero out M1 charge
-            n = len(b_pair[1]) # number connected to M1
-            for j in range(n):
-                # redistribute charges
-                shifted_charges[b_pair[1][j]] += q_0/float(n)
-        self.qm_potential.update_charges(shifted_charges)
+        self.shift_charges()
+        self.generate_fictitious()
 
 
     def _modify_calculate(
@@ -150,8 +122,6 @@ class LINK(CompositeCalculatorPlugin):
                 return_forces: bool | None = True,
                 return_components: bool | None = True,
         ) -> Results:
-            self.generate_fictitious()
-
             # Based on calculate method in composite_calculator.py
             energy = 0.
             forces = np.zeros(self.system.forces.shape)
@@ -221,6 +191,37 @@ class LINK(CompositeCalculatorPlugin):
             distributed[pair[0]] = g * np.dot(fictitious_forces[i], n)*n + (1-g)*fictitious_forces[i]
         return distributed
 
+    def shift_charges(self) -> None:
+        original_charges = self.system.charges.base.copy()
+        shifted_charges = original_charges.copy()
+        if self.charge_balance.casefold() == "all":
+            if len(self.region_ii) > 0:
+                region_i_charge = np.sum(
+                    self.system.charges[list(self.atoms)]
+                )
+                shifted_charges[list(self.region_ii)] += (
+                    region_i_charge/len(self.region_ii)
+                )
+        elif self.charge_balance.casefold() == "m1":
+            region_i_charge = np.sum(
+                self.system.charges[list(self.atoms)]
+            )
+            shifted_charges[list(self.m1_atoms)] += (
+                region_i_charge/len(self.m1_atoms)
+            )
+        elif not self.charge_balance.casefold() == "none":
+            raise ValueError(f"'{self.charge_balance}' is not a valid "
+                "charge balance method. Valid methods are 'all', "
+                "'m1', and 'none'.")
+        for i, b_pair in enumerate(self._boundary_atoms):
+            q_0 = shifted_charges[b_pair[0][1]]
+            shifted_charges[b_pair[0][1]] = 0 # zero out M1 charge
+            n = len(b_pair[1]) # number connected to M1
+            for j in range(n):
+                # redistribute charges
+                shifted_charges[b_pair[1][j]] += q_0/float(n)
+        self.qm_potential.update_charges(shifted_charges)
+    
     def generate_fictitious(self) -> None:
         """Add all fictitious atoms to the Psi4 potential.
         """
