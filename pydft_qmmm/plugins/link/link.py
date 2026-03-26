@@ -123,33 +123,47 @@ class LINK(CompositeCalculatorPlugin):
                 return_components: bool | None = True,
         ) -> Results:
             # Based on calculate method in composite_calculator.py
-            energy = 0.
-            forces = np.zeros(self.system.forces.shape)
-            components = dict()
+            results = Results(0.)
+            if return_forces:
+                results.forces = np.zeros(self.system.forces.shape)
+            if return_components:
+                results.components = dict()
             for i, calculator in enumerate(self.calculators):
                 # Calculate the energy, forces, and components.
-                calc_results = self.get_results(calculator)
-                energy += calc_results.energy
-                forces += calc_results.forces
-                # Determine a unique name for the calculator.
-                name = calculator.name
-                suffix = "0"
-                while name in components:
-                    suffix = str(int(suffix) + 1)
-                    name = calculator.name + suffix
-                # Assign the components appropriately.
-                components[name] = calc_results.energy
-                components["."*(i + 1)] = calc_results.components
-            results = Results(energy, forces, components)
+                calc_results = self.get_results(
+                    calculator,
+                    return_forces,
+                    return_components,
+                )
+                results.energy += calc_results.energy
+                if return_forces:
+                    results.forces += calc_results.forces
+                if return_components:
+                    # Determine a unique name for the calculator.
+                    name = calculator.name
+                    suffix = "0"
+                    while name in results.components:
+                        suffix = str(int(suffix) + 1)
+                        name = calculator.name + suffix
+                    # Assign the components appropriately.
+                    results.components[name] = calc_results.energy
+                    results.components["."*(i + 1)] = calc_results.components
             return results
         return inner
     
-    def get_results(self, calc: PotentialCalculator) -> Results:
+    def get_results(
+            self,
+            calc: PotentialCalculator,
+            return_forces: bool = True,
+            return_components: bool = True,
+        ) -> Results:
         """Get energy, forces, and components from a calculator, with
         forces redistributed if necessary.
         
         Args:
             calc: The calculator to get forces from.
+            return_forces: Whether to return forces.
+            return_components: Whether to return components.
         
         Returns:
             energy: The energy from the calculator.
@@ -158,18 +172,22 @@ class LINK(CompositeCalculatorPlugin):
                 distribute_forces().
             results.components: The components from the calculator.
         """
-        results = calc.calculate()
-        energy = results.energy
-        forces = np.zeros(self.system.forces.shape)
-        if isinstance(calc.potential, QMInterface):
-            forces = results.forces[:len(self.system.positions), :]
-            forces_fict = results.forces[
-                len(self.system.positions):, :
-            ]
-            forces += self.distribute_forces(forces_fict)
-        else:
-            forces = results.forces
-        return Results(energy, forces, results.components)
+        results = calc.calculate(return_forces, return_components)
+        results_return = Results(results.energy)
+        if return_forces:
+            forces = np.zeros(self.system.forces.shape)
+            if isinstance(calc.potential, QMInterface):
+                forces = results.forces[:len(self.system.positions), :]
+                forces_fict = results.forces[
+                    len(self.system.positions):, :
+                ]
+                forces += self.distribute_forces(forces_fict)
+            else:
+                forces = results.forces
+            results_return.forces = forces
+        if return_components:
+            results_return.components = results.components
+        return results_return
     
     def distribute_forces(self, fictitious_forces: NDArray[np.float64]) -> NDArray[np.float64]:
         """Distribute the forces from the fictitious atoms onto the real ones.
