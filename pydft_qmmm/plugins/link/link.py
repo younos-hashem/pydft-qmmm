@@ -64,6 +64,7 @@ class LINK(CompositeCalculatorPlugin):
         self._direct_pairs = [pairs[0] for
                               pairs in self._boundary_atoms]
         self.charge_balance = charge_balance
+        self.m1_atoms = set(pair[1] for pair in self._direct_pairs)
 
     def modify(
         self,
@@ -89,9 +90,7 @@ class LINK(CompositeCalculatorPlugin):
         self.system = calculator.system
         self.omm_context = self.mm_potential.base_context
         self.omm_system = self.omm_context.getSystem()
-        self.atoms = self.system.select("subsystem I")
-        self.region_ii = self.system.select("subsystem II")
-        self.m1_atoms = set(pair[1] for pair in self._direct_pairs)
+        self.region_i = self.system.select("subsystem I")
 
         # Update bond exclusions
         self.exclude_harmonic_angles()
@@ -101,7 +100,6 @@ class LINK(CompositeCalculatorPlugin):
         self.omm_context.reinitialize()
         self.omm_context.setPositions(omm_pos)
 
-        self.shift_charges()
         self.generate_fictitious()
 
 
@@ -122,6 +120,8 @@ class LINK(CompositeCalculatorPlugin):
                 return_forces: bool | None = True,
                 return_components: bool | None = True,
         ) -> Results:
+            # Update the charge distribution for the new partition
+            self.shift_charges()
             # Based on calculate method in composite_calculator.py
             results = Results(0.)
             if return_forces:
@@ -212,17 +212,18 @@ class LINK(CompositeCalculatorPlugin):
     def shift_charges(self) -> None:
         original_charges = self.system.charges.base.copy()
         shifted_charges = original_charges.copy()
+        region_ii = self.system.select("subsystem II")
         if self.charge_balance.casefold() == "all":
-            if len(self.region_ii) > 0:
+            if len(region_ii) > 0:
                 region_i_charge = np.sum(
-                    self.system.charges[list(self.atoms)]
+                    self.system.charges[list(self.region_i)]
                 )
-                shifted_charges[list(self.region_ii)] += (
-                    region_i_charge/len(self.region_ii)
+                shifted_charges[list(region_ii)] += (
+                    region_i_charge/len(region_ii)
                 )
         elif self.charge_balance.casefold() == "m1":
             region_i_charge = np.sum(
-                self.system.charges[list(self.atoms)]
+                self.system.charges[list(self.region_i)]
             )
             shifted_charges[list(self.m1_atoms)] += (
                 region_i_charge/len(self.m1_atoms)
@@ -265,7 +266,7 @@ class LINK(CompositeCalculatorPlugin):
         for force in harmonic_angle_forces:
             for i in range(force.getNumAngles()):
                 *p, a, k = force.getAngleParameters(i)
-                if p[1] in self.atoms:
+                if p[1] in self.region_i:
                     k *= 0
                     force.setAngleParameters(i, *p, a, k)
     
@@ -300,7 +301,7 @@ class LINK(CompositeCalculatorPlugin):
                     tuple(sorted((p2, p3))),
                     tuple(sorted((p3, p4))),
                 ]) <= bonds: # proper
-                    if set([p2, p3]) <= self.atoms:
+                    if set([p2, p3]) <= self.region_i:
                         if rb:
                             o = [0]*6
                         else:
@@ -310,7 +311,7 @@ class LINK(CompositeCalculatorPlugin):
                     tuple(sorted((p3, p2))),
                     tuple(sorted((p3, p4))),
                 ]) <= bonds: # improper
-                    if p3 in self.atoms:
+                    if p3 in self.region_i:
                         if rb:
                             o = [0]*6
                         else:

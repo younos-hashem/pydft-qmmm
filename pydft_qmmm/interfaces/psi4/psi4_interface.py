@@ -102,9 +102,12 @@ class Psi4Interface(QMInterface):
         if dist.shape != self.system.charges.shape:
             raise ValueError(
                 f"Charge array of shape {dist.shape} is incompatible "
-                f"with system with charge array of shape {self.system}.")
+                f"with system with charge array of shape "
+                f"{self.system.charges.shape}.")
         while len(dist) > len(self.alt_charges):
             self.alt_charges.append(0.)
+        while len(self.alt_charges) > len(dist):
+            self.alt_charges.pop()
         for i in range(len(self.alt_charges)):
             self.alt_charges[i] = dist[i]
 
@@ -200,7 +203,6 @@ class Psi4Interface(QMInterface):
         geometrystring += str(self.multiplicity) + "\n"
         # geometrystring += "symmetry c1\n"
         geometrystring += "noreorient\nnocom\n"
-        print(geometrystring)
         return psi4.geometry(geometrystring)
 
     @system_cache("positions", "charges", "subsystems")
