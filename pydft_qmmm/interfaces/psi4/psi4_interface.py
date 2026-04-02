@@ -48,7 +48,9 @@ class Psi4Interface(QMInterface):
             QM calculations.
         frame: The estimated current frame for output writing purposes.
         fictitious: A list of fictitious atoms present in the Psi4
-            calculation but not the system at large.
+            calculation but not the system at large. Each fictitous
+            atom is represented as a dictionary (see
+            `Psi4Interface.update_fictitious_atom` for details).
         alt_charges: An alternative Subsystem II charge distribution in
             which to embed the QM subsystem.
     """
@@ -78,20 +80,32 @@ class Psi4Interface(QMInterface):
         self.potentials.append(potential)
         self.update_options(perturb_h=True, perturb_with="EMBPOT")
     
-    def add_fictitious_atom(self, fict: dict) -> None:
-        """Add a fictitious atom that exists only in Psi4.
+    def update_fictitious_atom(self, fict: dict) -> None:
+        """Add a fictitious atom that only exists in Psi4. If the
+            provided atom has the same label as an existing fictitious
+            atom, the existing atom is replaced.
 
         Args:
             fict: The fictitious atom to append, a dictionary with four
                 elements:
                 position: The Cartesian coordinates of the fictitious
-                    atom
-                element: The atom's element
-                label: An optional string label
+                    atom, as a numpy array
+                element: The atom's element, as a string
+                label: An optional string label. If an atom is to be
+                    updated after creation, it must have a unique label
                 ghost: A boolean indicating whether to treat the atom
                     as a Psi4 ghost atom
         """
-        self.fictitious.append(fict)
+        updated = False
+        if fict["label"] is None:
+            fict["label"] = ""
+        for (i, atom) in enumerate(self.fictitious):
+            if fict["label"] != "" and fict["label"] == atom["label"]:
+                updated = True
+                self.fictitious[i] = fict
+                break
+        if not updated:
+            self.fictitious.append(fict)
     
     def update_charges(self, dist: NDArray[np.float64]) -> None:
         """Update the alternative embedding charges.

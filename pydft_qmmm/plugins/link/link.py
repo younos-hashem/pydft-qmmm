@@ -100,9 +100,6 @@ class LINK(CompositeCalculatorPlugin):
         self.omm_context.reinitialize()
         self.omm_context.setPositions(omm_pos)
 
-        self.generate_fictitious()
-
-
     def _modify_calculate(
             self,
             calculate: CalculateMethod,
@@ -120,8 +117,9 @@ class LINK(CompositeCalculatorPlugin):
                 return_forces: bool | None = True,
                 return_components: bool | None = True,
         ) -> Results:
-            # Update the charge distribution for the new partition
+            # Update charge distribution and fictitious atoms
             self.shift_charges()
+            self.generate_fictitious()
             # Based on calculate method in composite_calculator.py
             results = Results(0.)
             if return_forces:
@@ -253,7 +251,7 @@ class LINK(CompositeCalculatorPlugin):
                 "label": f"_LINK{i}",
                 "ghost": False,
             }
-            self.qm_potential.add_fictitious_atom(atom)
+            self.qm_potential.update_fictitious_atom(atom)
     
     def exclude_harmonic_angles(self) -> None:
         """Remove harmonic angle interactions in which the central
